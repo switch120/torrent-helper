@@ -15,6 +15,9 @@ if (url = process.argv[2]) {
         trnsId: null,
         folder: process.argv[3] || null
     }));
+
+    // just exit out if running solo (to push a magnet uri)
+    process.exit(0);
 }
 
 Promise.all(promises).then(() => {
