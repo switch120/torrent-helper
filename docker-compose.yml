@@ -8,7 +8,9 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
+      - /volume1/video:/data
       - .:/usr/src/app
+      - ./lib/resolv.conf:/etc/resolv.conf
       - /etc/localtime:/etc/localtime:ro 
     env_file:
       - .env

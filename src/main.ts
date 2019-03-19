@@ -13,7 +13,8 @@ if (url = process.argv[2]) {
     promises.push(database.ref("torrents").push().set({
         url: url,
         added: new Date().getTime(),
-        trnsId: null
+        trnsId: null,
+        folder: process.argv[3] || null
     }));
 }
 
@@ -25,5 +26,6 @@ Promise.all(promises).then(() => {
         transmission.addTorrents(snapshot.val());
     });
 
+    // run every 60s
     cron.schedule("* * * * *", transmission.cleanup);
 });

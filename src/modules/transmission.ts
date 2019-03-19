@@ -6,10 +6,7 @@ const tr = new Transmission();
 const _getActiveTorrents = function() {
     return new Promise((resolve, reject) => {
         tr.get((err: any, data: any) => {
-            if (err) {
-                reject(err);
-                return;
-            }
+            if (err) reject(err);
             resolve(data.torrents);
         });
     });
@@ -29,14 +26,11 @@ export default {
                     console.log("Found new Torrent; starting download: ", torrent.url);
 
                     tr.add(torrent.url, {
-                        "download-dir": "/downloads",
+                        "download-dir": torrent.folder || "/data/uncategorized",
                         ...options
                     }, async (err:any, result:any) => {
-                        if (err) {
-                            _reject(err);
-                            return;
-                        }
-
+                        if (err) _reject(err);
+                            
                         // update the torrent with the transmission id
                         await database.ref(`/torrents/${k}`).update({
                             trnsId: result.id
