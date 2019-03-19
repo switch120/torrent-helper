@@ -50,6 +50,17 @@ export default {
             let torrents = (<any[]>await _getActiveTorrents());
             torrents && torrents.forEach(torrent => {
                 if (torrent.status !== 6) return;
+
+                if (process.env.TORRENT_HISTORY) {
+                    // Add this torrent to the torrentHistory, just in case it's ever needed
+                    database.ref("/torrent-history").push().set({
+                        hashString: torrent.hashString,
+                        magnetLink: torrent.magnetLink,
+                        downloadDir: torrent.downloadDir,
+                        cleaned: new Date().getTime()
+                    });
+                }
+
                 tr.remove(torrent.id, (err:any, data:any) => {
                     console.log("Torrent cleaned: ", torrent);
                 })

@@ -1,4 +1,6 @@
 import admin from "firebase-admin";
+
+// Note: docker-compose.yml pulls in the .env file when run in a container; this is only needed for local dev
 require("dotenv").config();
 
 console.log("Establishing connection to Firebase ...");

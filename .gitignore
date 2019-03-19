@@ -1,7 +1,7 @@
 .env
 
-downloads/*
-!downloads/.gitkeep
+data/*
+!data/.gitkeep
 
 # compiled output
 /dist

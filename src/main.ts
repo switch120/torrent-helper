@@ -1,6 +1,5 @@
 import database from "./modules/firebase";
 import transmission from "./modules/transmission";
-import cron from "node-cron";
 
 console.clear();
 console.log("Starting Torrent-Helper Daemon ...");
@@ -26,6 +25,6 @@ Promise.all(promises).then(() => {
         transmission.addTorrents(snapshot.val());
     });
 
-    // run every 60s
-    cron.schedule("* * * * *", transmission.cleanup);
+    // run every 30s
+    setInterval(transmission.cleanup, 30*1000);
 });
