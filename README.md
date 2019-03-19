@@ -8,8 +8,11 @@ Once started, the docker container will automatically connect to the configured 
 ### How to use it
 
 * Step 1 - edit `.env` and supply required credentials
-* Step 2 (optioanl) - spin up the Vagrant VM for encapsulation
+* Step 2 (optional) - spin up the Vagrant VM for encapsulation with `vagrant up`, then ssh in with `vagrant ssh`
+* Step 3 - cd to `/var/www` and run `docker-compose up -d`
 * Step 3 - Run `npm run start` to start up the application
+
+> NOTE: Restart the Docker container, use command `docker-compose down` or it will just shut down when the VM is turned off.
 
 Once the application bootstraps, it will check Firebase for any newly added Torrents to download, and if it finds any it will queue them up in Transmission.
 
