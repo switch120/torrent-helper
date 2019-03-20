@@ -23,9 +23,10 @@ services:
   torrentHelper:
     image: node:8
     restart: unless-stopped
+    environment:
+      - CONTAINERIZED=true
     env_file:
       - .env
-    # Share the network with the torrentHost service
     network_mode: bridge
     volumes:
       - .:/usr/src/app

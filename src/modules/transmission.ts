@@ -1,7 +1,9 @@
 const Transmission = require("transmission");
 import database from "./firebase";
 
-const tr = new Transmission();
+const tr = new Transmission({
+    host: process.env.CONTAINERIZED ? "torrentHost" : "localhost"
+});
 
 const _getActiveTorrents = function() {
     return new Promise((resolve, reject) => {
