@@ -27,7 +27,8 @@ services:
       - CONTAINERIZED=true
     env_file:
       - .env
-    network_mode: bridge
+    links:
+      - "torrentHost:torrentHost"
     volumes:
       - .:/usr/src/app
     command: npm run --prefix /usr/src/app start:watch
