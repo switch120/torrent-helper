@@ -10,14 +10,14 @@
   "author": "Scott Byers",
   "license": "ISC",
   "dependencies": {
-    "firebase-admin": "^7.1.0",
-    "nodemon": "^1.18.10",
-    "transmission": "^0.4.9",
-    "ts-node-dev": "^1.0.0-pre.32",
-    "typescript": "^3.3.3333"
+    "firebase-admin": "^7.4.0",
+    "nodemon": "^1.19.4",
+    "transmission": "^0.4.10",
+    "ts-node-dev": "^1.0.0-pre.56",
+    "typescript": "^3.9.7"
   },
   "devDependencies": {
-    "dotenv": "^7.0.0",
-    "@types/node": "^11.11.3"
+    "@types/node": "^11.15.19",
+    "dotenv": "^7.0.0"
   }
 }

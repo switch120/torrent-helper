@@ -2,11 +2,12 @@ version: "3.3"
 
 services:
   torrentHost:
-    image: haugene/transmission-openvpn
+    image: haugene/transmission-openvpn:latest
+    container_name: transmission
     restart: unless-stopped
+    privileged: true
     dns:
-      - 209.222.18.222
-      - 209.222.18.218
+      - 1.1.1.1
     volumes:
       - "$SOURCE_VOLUME:/data"
       - .:/usr/src/app
@@ -15,15 +16,10 @@ services:
     env_file:
       - .env
     cap_add:
-      - NET_ADMIN
-    #devices:
-      #- /dev/net/tun
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
+     - NET_ADMIN
     ports:
       - 9091:9091
+      - 8888:8888
   torrentHelper:
     image: node:8
     restart: unless-stopped
@@ -36,12 +32,3 @@ services:
     volumes:
       - .:/usr/src/app
     command: npm run --prefix /usr/src/app start:watch
-# Uncomment below to run a local web proxy
-#proxy:
-#  image: haugene/transmission-openvpn-proxy
-#  links:
-#    - transmission
-#  ports:
-#    - 8080:8080
-#  volumes:
-#    - /etc/localtime:/etc/localtime:ro
