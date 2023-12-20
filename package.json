@@ -10,8 +10,7 @@
   "author": "Scott Byers",
   "license": "ISC",
   "dependencies": {
-    "firebase-admin": "^7.4.0",
-    "nodemon": "^1.19.4",
+    "nodemon": "^2.0.15",
     "transmission": "^0.4.10",
     "ts-node-dev": "^1.0.0-pre.56",
     "typescript": "^3.9.7"

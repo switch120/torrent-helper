@@ -2,26 +2,37 @@ version: "3.3"
 
 services:
   torrentHost:
-    image: haugene/transmission-openvpn:latest
+    image: haugene/transmission-openvpn:3.3
     container_name: transmission
-    restart: unless-stopped
+    restart: "no"
     privileged: true
-    dns:
-      - 1.1.1.1
+    # dns:
+      # - 8.8.8.8
+      # - 8.8.4.4
     volumes:
-      - "$SOURCE_VOLUME:/data"
+      - trans-data:/data
       - .:/usr/src/app
-      - ./lib/resolv.conf:/etc/resolv.conf
-      - /etc/localtime:/etc/localtime:ro
+      # - "$SOURCE_VOLUME:/data"
+      # - /etc/localtime:/etc/localtime:ro
     env_file:
       - .env
     cap_add:
-     - NET_ADMIN
+      - NET_ADMIN
+    healthcheck:
+      disable: true
+    # sysctls:
+      # - net.ipv6.conf.all.disable_ipv6=0
+      # - net.ipv6.conf.default.disable_ipv6=0
+      # - net.ipv6.conf.lo.disable_ipv6=0
+    # network_mode: bridge
+    # logging:
+    #   driver: json-file
+    #   options:
+    #     max-size: 10m
     ports:
       - 9091:9091
-      - 8888:8888
   torrentHelper:
-    image: node:8
+    image: node:14
     restart: unless-stopped
     environment:
       - CONTAINERIZED=true
@@ -32,3 +43,10 @@ services:
     volumes:
       - .:/usr/src/app
     command: npm run --prefix /usr/src/app start:watch
+volumes:
+  trans-data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=the-source.local,rw
+      device: ":/volume1/video"
