@@ -1,48 +1,41 @@
-version: "3.3"
-
 services:
   torrentHost:
-    image: haugene/transmission-openvpn:3.3
+    image: haugene/transmission-openvpn:5.4.1
     container_name: transmission
-    restart: "no"
+    restart: unless-stopped
     privileged: true
-    # dns:
-      # - 8.8.8.8
-      # - 8.8.4.4
     volumes:
       - trans-data:/data
+      # New installs persist haugene/Transmission config here. Do not auto-migrate
+      # legacy /data/transmission-home from the NFS-backed data volume.
+      - trans-config:/config
       - .:/usr/src/app
-      # - "$SOURCE_VOLUME:/data"
-      # - /etc/localtime:/etc/localtime:ro
     env_file:
       - .env
+    environment:
+      OPENVPN_OPTS: "${OPENVPN_OPTS:-} --inactive 3600 --ping 10 --ping-exit 60"
     cap_add:
       - NET_ADMIN
-    healthcheck:
-      disable: true
-    # sysctls:
-      # - net.ipv6.conf.all.disable_ipv6=0
-      # - net.ipv6.conf.default.disable_ipv6=0
-      # - net.ipv6.conf.lo.disable_ipv6=0
-    # network_mode: bridge
-    # logging:
-    #   driver: json-file
-    #   options:
-    #     max-size: 10m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
     ports:
       - 9091:9091
+      # PIA assigns a dynamic forwarded peer port; verify it before publishing peer ports.
   torrentHelper:
-    image: node:14
+    image: node:22-alpine
     restart: unless-stopped
     environment:
       - CONTAINERIZED=true
     env_file:
       - .env
-    links:
-      - "torrentHost:torrentHost"
+    depends_on:
+      torrentHost:
+        condition: service_healthy
     volumes:
       - .:/usr/src/app
-    command: npm run --prefix /usr/src/app start:watch
+    command: npm run --prefix /usr/src/app start
 volumes:
   trans-data:
     driver: local
@@ -50,3 +43,5 @@ volumes:
       type: nfs
       o: addr=the-source.local,rw
       device: ":/volume1/video"
+  trans-config:
+    driver: local

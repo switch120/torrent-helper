@@ -3,6 +3,8 @@
 data/*
 !data/.gitkeep
 
+.claude
+
 # compiled output
 /dist
 /dist-server

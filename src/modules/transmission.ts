@@ -1,40 +1,33 @@
-const Transmission = require("transmission");
+import {
+  createTransmissionClientFromEnv,
+  TransmissionTorrent,
+} from "./transmission-rpc";
 
-const tr = new Transmission({
-  host: process.env.CONTAINERIZED ? "torrentHost" : "localhost"
-});
+const client = createTransmissionClientFromEnv();
 
-const _getActiveTorrents = function () {
+const _getActiveTorrents = async function (): Promise<TransmissionTorrent[]> {
   console.log("Fetching active torrents ...");
 
-  return new Promise((resolve, reject) => {
-    tr.get((err: any, data: any) => {
-      if (err) {
-        console.error(err);
-        return reject(err);
-      }
-      
-      console.log(`[Done] Found ${data.torrents.length} active torrents.`);
-      resolve(data.torrents);
-    });
-  });
+  const torrents = await client.getActiveTorrents();
+  console.log(`[Done] Found ${torrents.length} active torrents.`);
+
+  return torrents;
 }
 
 export default {
-  transmission: tr,
+  transmission: client,
   getActiveTorrents: _getActiveTorrents,
   cleanup: async function () {
     try {
-      let torrents = (<any[]>await _getActiveTorrents());
-      torrents && torrents.forEach(torrent => {
-        if (torrent.status !== 6) return;
+      const torrents = await _getActiveTorrents();
+      for (const torrent of torrents) {
+        if (torrent.status !== 6) continue;
 
-        console.log(`Cleaning completed torrent: ${torrent}`)
+        console.log(`Cleaning completed torrent: ${torrent.id}`)
 
-        tr.remove(torrent.id, (err: any, data: any) => {
-          console.log("[Done] Torrent cleaned: ", torrent);
-        })
-      });
+        await client.removeTorrent(torrent.id);
+        console.log("[Done] Torrent cleaned: ", torrent);
+      }
     }
     catch (exc) {
       console.log("Cleanup error: ", exc);

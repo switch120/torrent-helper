@@ -1,37 +1,63 @@
-# Torrent Helper - Docker OpenVPN + Tunnel + Transmission + Firebase
+# Torrent Helper - Docker OpenVPN + Transmission
 
 ### Purpose
-To run a Docker container set inside a local NAS, with the ability to connect to a remote Firebase database and queue up Torrents remotely - or add them by hand with the Transmission web interface while the container is running locally. For increased security, the OpenVPN container will disconnect Transmission if the tunnel fails, and a second container runs the included helper app, written in TypeScript, to watch both the Firebase database and clean up Torrents as they finish from Transmission.
+Run Transmission behind a VPN tunnel on Docker, with a small TypeScript helper container that periodically removes completed torrents after they begin seeding.
 
 ### What it does
-This project is a simple shell for a Docker container that runs OpenVPN and Transmission for securely torrenting files. The original Docker image used can be found [here](https://hub.docker.com/r/haugene/transmission-openvpn/)
+This project uses the [haugene/transmission-openvpn](https://hub.docker.com/r/haugene/transmission-openvpn/) image so Transmission only runs while OpenVPN has an active tunnel. The helper app talks to Transmission over RPC from a second container.
 
-Once started, the docker container will automatically connect to the configured VPN and load up Transmission server, as well as spin up a secondary container to run the included helper script.
+New installs persist haugene/Transmission configuration in the `trans-config` volume mounted at `/config`, and downloads remain on the `trans-data` NFS-backed volume mounted at `/data`. Existing installs may still have legacy Transmission configuration at `/data/transmission-home`; do not auto-copy that folder from NFS during routine upgrades.
 
 ### Getting Started
-* Create a Firebase project and locate access credentials to put into the `.env` file.
-* [Read the OpenVPN Docker Container Documentation](https://hub.docker.com/r/haugene/transmission-openvpn/) for setting up your VPN if it's not the default Private Internet Access (PIA)
-* Modify the `SOURCE_VOLUME` value in `.env` to reflect the location you want Torrents to be saved. Default is the `./data` folder located within the Repository. Ex: Synology NAS - `/volume1/video`
+* Copy `.env.example` to `.env`.
+* Add your VPN provider credentials and settings to `.env`.
+* Confirm the `trans-data` NFS volume in `docker-compose.yml` points at the intended storage location.
+* Review the [haugene documentation](https://haugene.github.io/docker-transmission-openvpn/) before changing provider-specific VPN settings.
 
 ### How to use it
 
-* Step 1 - edit `.env` and supply required credentials/setup
-* Step 2 (optional, recommended) - spin up the Vagrant VM for encapsulation with `vagrant up`, then ssh in with `vagrant ssh`
-* Step 3 - cd to `/var/www` and run:
-    * `npm install` (only if you are not using the Vagrant VM, which will have already provisioned this on boot)
-    * `docker-compose up` (optionally add the `-d` parameter to run the containers in the background)
+Start the VPN and Transmission container first:
 
-> NOTE: To restart the Docker container, use command `docker-compose down` or it will just shut down when the VM is turned off.
+```bash
+docker compose up -d torrentHost
+```
 
-Once the application bootstraps, it will check Firebase for any newly added Torrents to download, and if it finds any it will queue them up in Transmission. (Sister UI project to come)
+Start the helper after `torrentHost` is healthy:
 
-> Note: You can also start the application w/ command line arguments to start downloading a Magnet URI right away. Use syntax: `npm start magnetUri /download/folder`
+```bash
+npm run build
+docker compose up -d torrentHelper
+```
+
+Or start the full stack:
+
+```bash
+npm run build
+docker compose up -d
+```
+
+Stop the stack:
+
+```bash
+docker compose down
+```
 
 ### Torrent Cleanup
 While running, this app will query Transmission torrents and immediately remove any torrents that have completed and begun seeding.
 
-### Accessing Transmission WebUI
-Once the Docker container is running, you should be able to access the Transmission web interface by visiting `http://localhost:9091/web` where you either use `localhost`, or the ip address of the VM that's bundled with this repo (see `vagrantfile`).
+### Peer and VPN Diagnostics
+PIA port forwarding can assign a dynamic peer port, so fixed `51413` host mappings are intentionally not published by default. Check the actual active port and tracker/peer status with:
 
-### Developer Notes
-You can also run `npm run start:watch` to use nodemon and restart the app when changes are detected without running the docker containers.
+```bash
+npm run diagnose
+```
+
+The diagnostic script reports container health, `tun0` tunnel presence, Transmission's peer-port status, torrent peer counts, tracker errors, and recent VPN/port-forward log signals without printing `.env` or expanded Compose configuration.
+
+### Accessing Transmission WebUI
+Once `torrentHost` is running and healthy, access the Transmission web interface at `http://localhost:9091/web`.
+
+### Upgrade Notes
+The Compose file pins `haugene/transmission-openvpn:5.4.1`. If this upgrade causes provider-specific trouble, roll the image back to `haugene/transmission-openvpn:5.3.2` and rerun the diagnostics before changing torrent clients or VPN container architecture.
+
+If haugene logs a warning about `/data/transmission-home`, leave it alone during normal operation. Any migration from that legacy NFS-backed folder to `/config/transmission-home` should be planned separately and should not copy from the NFS-backed data volume during routine startup or verification.

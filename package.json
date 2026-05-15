@@ -2,21 +2,21 @@
   "name": "torrent-helper",
   "version": "1.0.0",
   "description": "",
-  "main": "build/main",
+  "main": "build/main.js",
   "scripts": {
-    "start": "ts-node src/main.ts",
-    "start:watch": "nodemon"
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "start": "node build/main.js",
+    "start:watch": "tsx watch src/main.ts",
+    "test": "tsx --test src/**/*.test.ts",
+    "diagnose": "bash scripts/diagnose-transmission.sh"
   },
   "author": "Scott Byers",
   "license": "ISC",
-  "dependencies": {
-    "nodemon": "^2.0.15",
-    "transmission": "^0.4.10",
-    "ts-node-dev": "^1.0.0-pre.56",
-    "typescript": "^3.9.7"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/node": "^11.15.19",
-    "dotenv": "^7.0.0"
+    "@types/node": "^22.19.19",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3"
   }
 }
