@@ -1,0 +1,128 @@
+<main class="release-shell">
+  <header class="topbar">
+    <div class="title-block">
+      <p class="eyebrow">Digital releases</p>
+      <h1>{{ store.weekRange() }}</h1>
+    </div>
+
+    <div class="week-controls" aria-label="Week controls">
+      <button type="button" class="icon-button" (click)="store.previousWeek()" aria-label="Previous week">
+        <span aria-hidden="true">&lt;</span>
+      </button>
+      <input
+        type="date"
+        [ngModel]="store.weekStart()"
+        (ngModelChange)="onDateChange($event)"
+        aria-label="Selected week"
+      >
+      <button type="button" class="icon-button" (click)="store.nextWeek()" aria-label="Next week">
+        <span aria-hidden="true">&gt;</span>
+      </button>
+      <button type="button" class="refresh-button" (click)="store.refresh()">
+        Refresh
+      </button>
+    </div>
+  </header>
+
+  <section class="status-strip" [class.is-stale]="store.response()?.cache?.status === 'stale'" [class.is-error]="store.status() === 'error'">
+    <span>{{ store.cacheMessage() }}</span>
+    @if (store.response()?.cache?.fetchedAt; as fetchedAt) {
+      <time [dateTime]="fetchedAt">Updated {{ fetchedAt | date: "MMM d, h:mm a" }}</time>
+    }
+  </section>
+
+  @if (store.hiddenProviderFilters().length > 0) {
+    <section class="filter-strip" aria-label="Hidden providers">
+      <span>Hidden providers</span>
+      <div class="filter-list">
+        @for (provider of store.hiddenProviderFilters(); track provider.key) {
+          <label>
+            <input
+              type="checkbox"
+              [checked]="provider.hidden"
+              (change)="store.setProviderHidden(provider.key, $any($event.target).checked)"
+            >
+            {{ provider.name }}
+          </label>
+        }
+      </div>
+    </section>
+  }
+
+  @if (store.status() === "loading" && !store.response()) {
+    <section class="loading-grid" aria-label="Loading releases">
+      @for (item of [1, 2, 3, 4, 5, 6]; track item) {
+        <div class="skeleton"></div>
+      }
+    </section>
+  } @else {
+    <div class="release-columns">
+      @for (section of store.sections(); track section.title) {
+        <section class="release-section">
+          <div class="section-heading">
+            <h2>{{ section.title }}</h2>
+            <span>{{ section.count }}</span>
+          </div>
+
+          @if (section.releases.length === 0) {
+            <p class="empty-state">{{ section.emptyText }}</p>
+          } @else {
+            <div class="release-list">
+              @for (release of section.releases; track releaseKey($index, release)) {
+                <article class="release-row">
+                  <div class="poster-frame">
+                    @if (release.posterUrl) {
+                      <img [src]="release.posterUrl" [alt]="release.title + ' poster'" loading="lazy">
+                    } @else {
+                      <span>{{ release.title.slice(0, 1) }}</span>
+                    }
+                  </div>
+
+                  <div class="release-copy">
+                    <div class="release-title-line">
+                      <h3>{{ release.title }}</h3>
+                      @if (release.isOriginal) {
+                        <span class="badge">Original</span>
+                      }
+                    </div>
+
+                    <div class="meta-line">
+                      <time [dateTime]="release.releaseDate">{{ release.releaseDate | date: "EEE, MMM d" }}</time>
+                      @if (release.seasonNumber) {
+                        <span>Season {{ release.seasonNumber }}</span>
+                      }
+                    </div>
+
+                    <div class="source-line">
+                      @if (release.releaseKind === "digital") {
+                        <span class="digital-chip" [class.is-featured]="release.isFeaturedDigital">
+                          {{ release.isFeaturedDigital ? "Featured digital" : "Digital release" }}
+                        </span>
+                      } @else {
+                        <button
+                          type="button"
+                          class="source-chip"
+                          (click)="store.hideProvider(release)"
+                          [attr.aria-label]="'Hide ' + release.sourceName"
+                        >
+                          <span>{{ release.sourceName }}</span>
+                          <strong aria-hidden="true">x</strong>
+                        </button>
+                      }
+                      @if (release.imdbId) {
+                        <small>{{ release.imdbId }}</small>
+                      }
+                      @if (release.tmdbId) {
+                        <small>TMDB {{ release.tmdbId }}</small>
+                      }
+                    </div>
+                  </div>
+                </article>
+              }
+            </div>
+          }
+        </section>
+      }
+    </div>
+  }
+</main>

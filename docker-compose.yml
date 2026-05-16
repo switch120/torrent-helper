@@ -1,4 +1,55 @@
 services:
+  releaseDb:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${RELEASE_DB_USER:-release}"
+      POSTGRES_PASSWORD: "${RELEASE_DB_PASSWORD:-release}"
+      POSTGRES_DB: "${RELEASE_DB_NAME:-release_hub}"
+    volumes:
+      - release-db18:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${RELEASE_DB_USER:-release} -d ${RELEASE_DB_NAME:-release_hub}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${RELEASE_DB_PORT:-5433}:5432"
+  releaseApi:
+    image: node:22-alpine
+    restart: unless-stopped
+    user: "${HOST_UID:-501}:${HOST_GID:-20}"
+    working_dir: /usr/src/app/apps/api
+    environment:
+      DATABASE_URL: "postgresql://${RELEASE_DB_USER:-release}:${RELEASE_DB_PASSWORD:-release}@releaseDb:5432/${RELEASE_DB_NAME:-release_hub}"
+      WATCHMODE_API_KEY: "${WATCHMODE_API_KEY:-}"
+      TMDB_API_KEY: "${TMDB_API_KEY:-}"
+      TMDB_READ_ACCESS_TOKEN: "${TMDB_READ_ACCESS_TOKEN:-}"
+      PORT: 3001
+      NPM_CONFIG_CACHE: /tmp/.npm-cache
+    depends_on:
+      releaseDb:
+        condition: service_healthy
+    volumes:
+      - .:/usr/src/app
+    command: sh -c "npm install && npm run prisma:generate && npm run prisma:deploy && npm run start:dev"
+    ports:
+      - "${RELEASE_API_PORT:-3001}:3001"
+  releaseWeb:
+    image: node:22-alpine
+    restart: unless-stopped
+    user: "${HOST_UID:-501}:${HOST_GID:-20}"
+    working_dir: /usr/src/app/apps/web
+    environment:
+      API_PROXY_TARGET: http://releaseApi:3001
+      NPM_CONFIG_CACHE: /tmp/.npm-cache
+    depends_on:
+      - releaseApi
+    volumes:
+      - .:/usr/src/app
+    command: sh -c "npm install && npm run start"
+    ports:
+      - "${RELEASE_WEB_PORT:-4200}:4200"
   torrentHost:
     image: haugene/transmission-openvpn:5.4.1
     container_name: transmission
@@ -37,6 +88,8 @@ services:
       - .:/usr/src/app
     command: npm run --prefix /usr/src/app start
 volumes:
+  release-db18:
+    driver: local
   trans-data:
     driver: local
     driver_opts:

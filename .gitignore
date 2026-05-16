@@ -1,4 +1,6 @@
 .env
+.playwright-mcp
+release-hub-*.png
 
 data/*
 !data/.gitkeep
@@ -11,6 +13,11 @@ data/*
 /tmp
 /out-tsc
 /build
+/apps/api/dist
+/apps/api/src/generated
+/apps/web/dist
+/apps/web/.angular
+/apps/*/coverage
 
 # dependencies
 node_modules

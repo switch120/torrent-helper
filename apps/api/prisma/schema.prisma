@@ -1,0 +1,102 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model ReleaseTitle {
+  watchmodeId Int            @id
+  title       String
+  titleType   String
+  mediaType   String
+  tmdbId      Int?
+  tmdbType    String?
+  imdbId      String?
+  posterUrl   String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  events      ReleaseEvent[]
+}
+
+model ReleaseSource {
+  watchmodeId Int            @id
+  name        String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  events      ReleaseEvent[]
+}
+
+model WatchModeFetchCache {
+  cacheKey           String   @id
+  requestedStartDate DateTime @db.Date
+  requestedEndDate   DateTime @db.Date
+  coveredStartDate   DateTime @db.Date
+  coveredEndDate     DateTime @db.Date
+  status             String
+  warning            String?
+  fetchedAt          DateTime?
+  rateLimitLimit     Int?
+  rateLimitRemaining Int?
+  accountQuota       Int?
+  accountQuotaUsed   Int?
+  rawResponse        Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([coveredStartDate, coveredEndDate])
+  @@index([requestedStartDate, requestedEndDate])
+}
+
+model TmdbDigitalWeekCache {
+  weekStart   DateTime @id @db.Date
+  weekEnd     DateTime @db.Date
+  status      String
+  warning     String?
+  fetchedAt   DateTime?
+  expiresAt   DateTime?
+  rawResponse Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TmdbDigitalMovie {
+  eventId              String   @id
+  tmdbId               Int
+  title                String
+  posterUrl            String?
+  releaseDate          DateTime @db.Date
+  primaryReleaseDate   DateTime? @db.Date
+  popularity           Float?
+  voteCount            Int?
+  isFeaturedDigital    Boolean  @default(false)
+  raw                  Json
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([releaseDate])
+  @@index([tmdbId])
+  @@index([isFeaturedDigital])
+  @@index([popularity])
+}
+
+model ReleaseEvent {
+  id           String        @id
+  titleId      Int
+  sourceId     Int
+  releaseDate  DateTime      @db.Date
+  seasonNumber Int?
+  isOriginal   Boolean
+  raw          Json
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  title        ReleaseTitle  @relation(fields: [titleId], references: [watchmodeId], onDelete: Cascade)
+  source       ReleaseSource @relation(fields: [sourceId], references: [watchmodeId], onDelete: Cascade)
+
+  @@index([releaseDate])
+  @@index([titleId])
+  @@index([sourceId])
+}

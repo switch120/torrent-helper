@@ -1,0 +1,40 @@
+{
+  "name": "@torrent-helper/release-api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "npm run prisma:generate && tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "start": "node dist/main.js",
+    "start:dev": "tsx watch src/main.ts",
+    "pretest": "npm run prisma:generate",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:generate": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.21",
+    "@nestjs/core": "^11.1.21",
+    "@nestjs/platform-express": "^11.1.21",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "pg": "^8.20.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.21",
+    "@types/node": "^22.19.19",
+    "@types/pg": "^8.15.6",
+    "prisma": "^7.8.0",
+    "supertest": "^7.1.4",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.0.13"
+  },
+  "overrides": {
+    "@hono/node-server": "1.19.13"
+  }
+}

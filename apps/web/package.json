@@ -1,0 +1,33 @@
+{
+  "name": "@torrent-helper/release-web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "ng build",
+    "check": "ng build --configuration development",
+    "start": "ng serve --host 0.0.0.0 --poll 1000 --proxy-config proxy.conf.cjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@angular/common": "^21.2.13",
+    "@angular/compiler": "^21.2.13",
+    "@angular/core": "^21.2.13",
+    "@angular/forms": "^21.2.13",
+    "@angular/platform-browser": "^21.2.13",
+    "@angular/router": "^21.2.13",
+    "@ngrx/signals": "^21.1.0",
+    "rxjs": "^7.8.2",
+    "tslib": "^2.8.1",
+    "zone.js": "^0.16.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.2.11",
+    "@angular/cli": "^21.2.11",
+    "@angular/compiler-cli": "^21.2.13",
+    "@types/node": "^22.19.19",
+    "jsdom": "^27.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.13"
+  }
+}
