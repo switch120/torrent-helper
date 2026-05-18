@@ -97,19 +97,6 @@ services:
     ports:
       - 9091:9091
       # PIA assigns a dynamic forwarded peer port; verify it before publishing peer ports.
-  torrentHelper:
-    image: node:22-alpine
-    restart: unless-stopped
-    environment:
-      - CONTAINERIZED=true
-    env_file:
-      - .env
-    depends_on:
-      torrentHost:
-        condition: service_healthy
-    volumes:
-      - .:/usr/src/app
-    command: npm run --prefix /usr/src/app start
 volumes:
   release-db18:
     driver: local

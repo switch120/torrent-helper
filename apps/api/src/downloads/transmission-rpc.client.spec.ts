@@ -87,6 +87,26 @@ describe("TransmissionRpcClient", () => {
       }),
     ]);
   });
+
+  it("removes a torrent without deleting local data", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const client = new TransmissionRpcClient({
+      fetchImpl: async (_url, init) => {
+        requests.push(JSON.parse(String(init.body)));
+        return jsonResponse({ result: "success", arguments: {} });
+      },
+    });
+
+    await client.removeTorrent(42);
+
+    expect(requests[0]).toEqual({
+      method: "torrent-remove",
+      arguments: {
+        ids: [42],
+        "delete-local-data": false,
+      },
+    });
+  });
 });
 
 function jsonResponse(body: unknown): Response {

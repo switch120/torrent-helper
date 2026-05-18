@@ -1,22 +1,22 @@
 {
   "name": "torrent-helper",
   "version": "1.0.0",
-  "description": "",
-  "main": "build/main.js",
+  "description": "Docker-first Transmission VPN and release hub utilities.",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "check": "tsc --noEmit",
-    "start": "node build/main.js",
-    "start:watch": "tsx watch src/main.ts",
-    "test": "tsx --test src/**/*.test.ts",
-    "diagnose": "bash scripts/diagnose-transmission.sh"
+    "diagnose": "bash scripts/diagnose-transmission.sh",
+    "lint": "eslint \"apps/**/*.ts\"",
+    "knip": "knip --include files,dependencies,unlisted --no-config-hints",
+    "precommit:check": "npm run knip && npm run lint && git diff --check",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "author": "Scott Byers",
   "license": "ISC",
-  "dependencies": {},
   "devDependencies": {
-    "@types/node": "^22.19.19",
-    "tsx": "^4.22.0",
-    "typescript": "^6.0.3"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.0",
+    "globals": "^17.6.0",
+    "knip": "^6.14.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.4"
   }
 }

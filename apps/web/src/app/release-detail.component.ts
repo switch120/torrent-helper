@@ -5,7 +5,6 @@ import { ActivatedRoute, RouterLink } from "@angular/router";
 import { ReleaseApiClient } from "./release-api.client";
 import type { ReleaseCastMember, ReleaseDetail, TorrentResult, TorrentSearchQuality } from "./release.models";
 import {
-  BOTTOM_FETCH_HOLD_MS,
   bottomFetchButtonLabel,
   bottomFetchCueLabel,
   bottomFetchProgress,

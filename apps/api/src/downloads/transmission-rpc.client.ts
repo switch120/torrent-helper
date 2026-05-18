@@ -114,6 +114,13 @@ export class TransmissionRpcClient {
     return (result.torrents || []).map(mapTorrent);
   }
 
+  async removeTorrent(id: number): Promise<void> {
+    await this.request("torrent-remove", {
+      ids: [id],
+      "delete-local-data": false,
+    });
+  }
+
   private async request<T = TransmissionRpcArguments>(
     method: string,
     args: TransmissionRpcArguments = {},

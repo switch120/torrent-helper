@@ -1,7 +1,9 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from "@nestjs/common";
+import { ScheduleModule } from "@nestjs/schedule";
 import { AuthController } from "./auth/auth.controller";
 import { AuthMiddleware } from "./auth/auth.middleware";
 import { DownloadsController } from "./downloads/downloads.controller";
+import { TorrentCleanupService } from "./downloads/torrent-cleanup.service";
 import { createTransmissionRpcClientFromEnv } from "./downloads/transmission-rpc.client";
 import { FavoritesController } from "./favorites/favorites.controller";
 import { FavoritesService } from "./favorites/favorites.service";
@@ -19,12 +21,14 @@ import { UserSettingsController } from "./users/user-settings.controller";
 import { UserSettingsService } from "./users/user-settings.service";
 
 @Module({
+  imports: [ScheduleModule.forRoot()],
   controllers: [HealthController, AuthController, ReleasesController, DownloadsController, UserSettingsController, FavoritesController],
   providers: [
     PrismaService,
     AuthMiddleware,
     ReleasesService,
     ReleaseWorkflowService,
+    TorrentCleanupService,
     UserSettingsService,
     FavoritesService,
     {

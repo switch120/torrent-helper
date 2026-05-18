@@ -1,10 +1,10 @@
 # Torrent Helper - Docker OpenVPN + Transmission
 
 ### Purpose
-Run Transmission behind a VPN tunnel on Docker, with a small TypeScript helper container that periodically removes completed torrents after they begin seeding.
+Run Transmission behind a VPN tunnel on Docker, with a local release hub that periodically removes completed torrents after they begin seeding.
 
 ### What it does
-This project uses the [haugene/transmission-openvpn](https://hub.docker.com/r/haugene/transmission-openvpn/) image so Transmission only runs while OpenVPN has an active tunnel. The helper app talks to Transmission over RPC from a second container.
+This project uses the [haugene/transmission-openvpn](https://hub.docker.com/r/haugene/transmission-openvpn/) image so Transmission only runs while OpenVPN has an active tunnel. The NestJS release API talks to Transmission over RPC for torrent add/status behavior and completed-torrent cleanup.
 
 New installs persist haugene/Transmission configuration in the `trans-config` volume mounted at `/config`, and downloads remain on the `trans-data` NFS-backed volume mounted at `/data`. Existing installs may still have legacy Transmission configuration at `/data/transmission-home`; do not auto-copy that folder from NFS during routine upgrades.
 
@@ -26,17 +26,15 @@ Start the VPN and Transmission container first:
 docker compose up -d torrentHost
 ```
 
-Start the helper after `torrentHost` is healthy:
+Start the release hub after `torrentHost` is healthy:
 
 ```bash
-npm run build
-docker compose up -d torrentHelper
+docker compose up -d releaseDb releaseApi releaseWeb
 ```
 
 Or start the full stack:
 
 ```bash
-npm run build
 docker compose up -d
 ```
 
@@ -55,7 +53,7 @@ docker compose down
 ```
 
 ### Torrent Cleanup
-While running, this app will query Transmission torrents and immediately remove any torrents that have completed and begun seeding.
+While `releaseApi` is running, a NestJS cron checks Transmission every 30 seconds and removes any torrents that have completed and begun seeding. Local data is not deleted; this matches Transmission's `torrent-remove` behavior with `delete-local-data` disabled.
 
 ### Digital Release Hub
 The release hub lets you choose a Monday-Sunday week and view cached digital releases grouped into Movies and TV. WatchMode powers streaming/TV rows, and TMDB can add provider-agnostic digital movie release dates. The app stores WatchMode fetch snapshots, TMDB digital movie weeks, normalized release rows, and raw response JSON in the local `release-db18` Postgres volume, not on the NFS-backed Transmission data volume.
@@ -78,6 +76,9 @@ Provider filters:
 Useful development commands:
 
 ```bash
+npm run precommit:check
+npm run lint
+npm run knip
 npm --prefix apps/api test
 npm --prefix apps/api run build
 npm --prefix apps/web test
@@ -85,6 +86,15 @@ npm --prefix apps/web run build
 ```
 
 If your host Node version is not supported by Prisma or Angular, run those commands through `node:22-alpine`, matching the Compose services.
+
+### Pre-commit Checks
+This repo uses a tracked `.githooks/pre-commit` hook. Running `npm install` at the repo root configures `core.hooksPath` to `.githooks`; you can also set it manually with:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs `npm run precommit:check`, which checks Knip, ESLint, and whitespace.
 
 ### Peer and VPN Diagnostics
 PIA port forwarding can assign a dynamic peer port, so fixed `51413` host mappings are intentionally not published by default. Check the actual active port and tracker/peer status with:

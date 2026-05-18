@@ -1,0 +1,49 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": [
+    "apps/api/dist/**",
+    "apps/api/src/generated/**",
+    "apps/web/.angular/**",
+    "apps/web/dist/**",
+    "build/**"
+  ],
+  "ignoreDependencies": [
+    "@prisma/client"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "eslint.config.mjs",
+        "scripts/diagnose-transmission.sh"
+      ],
+      "project": [
+        "eslint.config.mjs",
+        "scripts/**/*.sh"
+      ]
+    },
+    "apps/api": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.spec.ts",
+        "prisma.config.ts",
+        "vitest.config.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "prisma.config.ts",
+        "vitest.config.ts"
+      ]
+    },
+    "apps/web": {
+      "entry": [
+        "src/main.ts",
+        "src/**/*.spec.ts",
+        "vitest.config.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "vitest.config.ts"
+      ]
+    }
+  }
+}
