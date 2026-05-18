@@ -1,0 +1,135 @@
+<main class="favorites-shell">
+  <header class="topbar">
+    <div class="title-block">
+      <p class="eyebrow">Favorite shows</p>
+      <h1>Snapshot</h1>
+    </div>
+
+    <div class="favorite-toolbar">
+      <label class="select-control">
+        <span>Sort by</span>
+        <select [ngModel]="sortKey()" (ngModelChange)="setSortKey($event)">
+          @for (option of sortOptions; track option) {
+            <option [value]="option">{{ favoriteSortLabel(option) }}</option>
+          }
+        </select>
+      </label>
+
+      <div class="radio-filter" role="radiogroup" aria-label="Favorite show availability">
+        <label class="pill-toggle">
+          <input
+            type="radio"
+            name="favorite-availability"
+            [checked]="!showNoNextDate()"
+            (change)="showNoNextDate.set(false)"
+          >
+          <span>All</span>
+        </label>
+        <label
+          class="pill-toggle"
+          title="Canceled shows or shows with no known next episode date"
+        >
+          <input
+            type="radio"
+            name="favorite-availability"
+            [checked]="showNoNextDate()"
+            (change)="showNoNextDate.set(true)"
+          >
+          <span>No next date</span>
+        </label>
+      </div>
+
+      <button type="button" class="refresh-button" (click)="load()">Refresh</button>
+    </div>
+  </header>
+
+  @if (status() === "loading") {
+    <section class="loading-grid" aria-label="Loading favorites">
+      @for (item of [1, 2, 3, 4]; track item) {
+        <div class="skeleton"></div>
+      }
+    </section>
+  } @else if (status() === "error") {
+    <p class="empty-state">{{ error() }}</p>
+  } @else if (favorites().length === 0) {
+    <section class="empty-state">
+      <p>No favorite shows yet.</p>
+      <a routerLink="/" queryParamsHandling="preserve">Browse releases</a>
+    </section>
+  } @else if (visibleFavorites().length === 0) {
+    <section class="empty-state">
+      <p>No favorites without a next date.</p>
+    </section>
+  } @else {
+    <section class="favorite-grid" aria-label="Favorite shows">
+      @for (show of visibleFavorites(); track show.showKey) {
+        <article class="favorite-card">
+          <div
+            class="favorite-backdrop"
+            [style.backgroundImage]="show.backdropUrl ? 'linear-gradient(90deg, rgba(15, 27, 27, .92), rgba(15, 27, 27, .58)), url(' + show.backdropUrl + ')' : null"
+          >
+            <div class="favorite-poster">
+              @if (show.posterUrl) {
+                <img [src]="show.posterUrl" [alt]="show.title + ' poster'" loading="lazy">
+              } @else {
+                <span>{{ show.title.slice(0, 1) }}</span>
+              }
+            </div>
+
+            <div class="favorite-copy">
+              <div class="favorite-title-line">
+                <h2>{{ show.title }}</h2>
+                <button type="button" class="borderless-button" (click)="remove(show)" [attr.aria-label]="'Remove ' + show.title">
+                  ★
+                </button>
+              </div>
+              <div class="source-line">
+                @if (show.status) {
+                  <span class="badge" [class.is-canceled]="show.isCanceled">{{ show.status }}</span>
+                }
+                @if (show.currentSeasonNumber) {
+                  <span>Season {{ show.currentSeasonNumber }}</span>
+                }
+                @if (show.numberOfSeasons) {
+                  <span>{{ show.numberOfSeasons }} seasons</span>
+                }
+                @if (show.numberOfEpisodes) {
+                  <span>{{ show.numberOfEpisodes }} episodes</span>
+                }
+              </div>
+              @if (show.overview) {
+                <p>{{ show.overview }}</p>
+              }
+            </div>
+          </div>
+
+          <div class="favorite-facts">
+            <div>
+              <strong>Last episode</strong>
+              <span>{{ episodeLabel(show.lastEpisode) }}</span>
+              @if (show.lastEpisode?.airDate) {
+                <time [dateTime]="show.lastEpisode?.airDate || ''">{{ show.lastEpisode?.airDate | date: "MMM d, y" }}</time>
+              }
+            </div>
+            <div>
+              <strong>Next episode</strong>
+              <span>{{ episodeLabel(show.nextEpisode) }}</span>
+              @if (show.nextEpisode?.airDate) {
+                <time [dateTime]="show.nextEpisode?.airDate || ''">{{ show.nextEpisode?.airDate | date: "MMM d, y" }}</time>
+              }
+            </div>
+            <div>
+              <strong>Latest release context</strong>
+              @if (show.releaseContext) {
+                <span>{{ show.releaseContext.sourceName }}</span>
+                <time [dateTime]="show.releaseContext.releaseDate">{{ show.releaseContext.releaseDate | date: "MMM d, y" }}</time>
+              } @else {
+                <span>Unknown</span>
+              }
+            </div>
+          </div>
+        </article>
+      }
+    </section>
+  }
+</main>

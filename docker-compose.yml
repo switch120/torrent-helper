@@ -25,6 +25,18 @@ services:
       WATCHMODE_API_KEY: "${WATCHMODE_API_KEY:-}"
       TMDB_API_KEY: "${TMDB_API_KEY:-}"
       TMDB_READ_ACCESS_TOKEN: "${TMDB_READ_ACCESS_TOKEN:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5.4-mini}"
+      OPENAI_TORRENT_RERANK_ENABLED: "${OPENAI_TORRENT_RERANK_ENABLED:-true}"
+      AUTH0_DOMAIN: "${AUTH0_DOMAIN:-}"
+      AUTH0_AUDIENCE: "${AUTH0_AUDIENCE:-}"
+      AUTH0_CLIENT_ID: "${AUTH0_CLIENT_ID:-}"
+      PROWLARR_BASE_URL: "${PROWLARR_BASE_URL:-http://prowlarr:9696}"
+      PROWLARR_API_KEY: "${PROWLARR_API_KEY:-}"
+      TRANSMISSION_RPC_HOST: "${TRANSMISSION_RPC_HOST:-torrentHost}"
+      TRANSMISSION_RPC_PORT: "${TRANSMISSION_RPC_PORT:-9091}"
+      TRANSMISSION_RPC_USERNAME: "${TRANSMISSION_RPC_USERNAME:-}"
+      TRANSMISSION_RPC_PASSWORD: "${TRANSMISSION_RPC_PASSWORD:-}"
       PORT: 3001
       NPM_CONFIG_CACHE: /tmp/.npm-cache
     depends_on:
@@ -50,6 +62,17 @@ services:
     command: sh -c "npm install && npm run start"
     ports:
       - "${RELEASE_WEB_PORT:-4200}:4200"
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    restart: unless-stopped
+    environment:
+      PUID: "${HOST_UID:-501}"
+      PGID: "${HOST_GID:-20}"
+      TZ: "${TZ:-America/New_York}"
+    volumes:
+      - prowlarr-config:/config
+    ports:
+      - "${PROWLARR_PORT:-9696}:9696"
   torrentHost:
     image: haugene/transmission-openvpn:5.4.1
     container_name: transmission
@@ -97,4 +120,6 @@ volumes:
       o: addr=the-source.local,rw
       device: ":/volume1/video"
   trans-config:
+    driver: local
+  prowlarr-config:
     driver: local

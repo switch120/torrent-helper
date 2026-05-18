@@ -1,0 +1,2 @@
+ALTER TABLE "TmdbDigitalMovie" ADD COLUMN "voteAverage" DOUBLE PRECISION;
+ALTER TABLE "TmdbTvAiring" ADD COLUMN "voteAverage" DOUBLE PRECISION;

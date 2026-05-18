@@ -1,0 +1,223 @@
+<main class="release-shell" [attr.aria-busy]="store.status() === 'loading' || store.status() === 'refreshing'">
+  @if (store.status() === "loading" || store.status() === "refreshing") {
+    <div class="refresh-overlay" role="dialog" aria-modal="true" aria-live="assertive" aria-label="Refreshing release data">
+      <div class="refresh-dialog">
+        <div class="refresh-spinner" aria-hidden="true"></div>
+        <div>
+          <p>Refreshing release data</p>
+          <span>Keeping the current week visible while the sources update.</span>
+        </div>
+      </div>
+    </div>
+  }
+
+  <header class="topbar">
+    <div class="title-block">
+      <p class="eyebrow">Digital releases</p>
+      <h1>{{ store.weekRange() }}</h1>
+    </div>
+
+    <div class="week-controls" aria-label="Week controls">
+      <button type="button" class="icon-button" (click)="previousWeek()" aria-label="Previous week">
+        <span aria-hidden="true">&lt;</span>
+      </button>
+      <input
+        type="date"
+        [ngModel]="store.weekStart()"
+        (ngModelChange)="onDateChange($event)"
+        aria-label="Selected week"
+      >
+      <button type="button" class="icon-button" (click)="nextWeek()" aria-label="Next week">
+        <span aria-hidden="true">&gt;</span>
+      </button>
+      <button type="button" class="refresh-button" (click)="store.refresh()">
+        Refresh
+      </button>
+    </div>
+  </header>
+
+  <section class="status-strip" [class.is-stale]="store.response()?.cache?.status === 'stale'" [class.is-error]="store.status() === 'error'">
+    <span>{{ store.cacheMessage() }}</span>
+    @if (store.response()?.cache?.fetchedAt; as fetchedAt) {
+      <time [dateTime]="fetchedAt">Updated {{ fetchedAt | date: "MMM d, h:mm a" }}</time>
+    }
+  </section>
+
+  @if (store.providerFilters().length > 0 || store.hiddenProviderFilters().length > 0 || (store.response()?.tv?.length ?? 0) > 0 || store.favoriteShowKeys().length > 0) {
+    <section class="filter-bar" aria-label="Release filters">
+      <div class="radio-filter" role="radiogroup" aria-label="TV release favorites filter">
+        <label class="pill-toggle">
+          <input
+            type="radio"
+            name="week-favorite-filter"
+            [checked]="!store.showOnlyFavorites()"
+            (change)="store.setShowOnlyFavorites(false)"
+          >
+          <span>All</span>
+        </label>
+        <label class="pill-toggle">
+          <input
+            type="radio"
+            name="week-favorite-filter"
+            [checked]="store.showOnlyFavorites()"
+            (change)="store.setShowOnlyFavorites(true)"
+          >
+          <span>Favorites</span>
+        </label>
+      </div>
+
+      @if (store.providerFilters().length > 0) {
+        <div class="provider-focus-strip" aria-label="Provider filter">
+          <label>
+            Provider
+            <select [ngModel]="store.focusedProviderKey() || ''" (ngModelChange)="store.setFocusedProvider($event)">
+              <option value="">All providers</option>
+              @for (provider of store.providerFilters(); track provider.key) {
+                <option [value]="provider.key" [disabled]="provider.disabled">
+                  {{ provider.name }} ({{ provider.count ?? 0 }}){{ provider.hidden ? " hidden" : "" }}
+                </option>
+              }
+            </select>
+          </label>
+        </div>
+      }
+
+      @if (store.hiddenProviderFilters().length > 0) {
+        <div class="filter-strip hidden-provider-strip" aria-label="Hidden providers">
+          <span>Hidden providers</span>
+          <div class="filter-list">
+            @for (provider of store.hiddenProviderFilters(); track provider.key) {
+              <label>
+                <input
+                  type="checkbox"
+                  [checked]="provider.hidden"
+                  (change)="store.setProviderHidden(provider.key, $any($event.target).checked)"
+                >
+                {{ provider.name }}
+              </label>
+            }
+          </div>
+        </div>
+      }
+    </section>
+  }
+
+  @if (store.status() === "loading" && !store.response()) {
+    <section class="loading-grid" aria-label="Loading releases">
+      @for (item of [1, 2, 3, 4, 5, 6]; track item) {
+        <div class="skeleton"></div>
+      }
+    </section>
+  } @else {
+    <div class="release-columns">
+      @for (section of store.sections(); track section.title) {
+        <section class="release-section">
+          <div class="section-heading">
+            <h2>{{ section.title }}</h2>
+            <div class="section-counts">
+              <span>{{ section.count }}</span>
+              @if (section.hiddenCount > 0) {
+                <button
+                  type="button"
+                  class="hidden-count"
+                  (click)="store.clearHiddenShows()"
+                  aria-label="Restore hidden shows"
+                >
+                  {{ section.hiddenCount }} hidden
+                </button>
+              }
+            </div>
+          </div>
+
+          @if (section.releases.length === 0) {
+            <p class="empty-state">{{ section.emptyText }}</p>
+          } @else {
+            <div class="release-list">
+              @for (release of section.releases; track releaseKey($index, release)) {
+                <article
+                  class="release-row is-clickable"
+                  [routerLink]="modalRoute('release', release.eventId)"
+                  queryParamsHandling="preserve"
+                  tabindex="0"
+                >
+                  <div class="poster-frame">
+                    @if (release.posterUrl) {
+                      <img [src]="release.posterUrl" [alt]="release.title + ' poster'" loading="lazy">
+                    } @else {
+                      <span>{{ release.title.slice(0, 1) }}</span>
+                    }
+                  </div>
+
+                  <div class="release-copy">
+                    <div class="release-title-line">
+                      <h3>{{ release.title }}</h3>
+                      @if (release.isOriginal) {
+                        <span class="badge">Original</span>
+                      }
+                      @if (section.title === "TV") {
+                        @if (isFavorite(release)) {
+                          <span class="favorite-show-indicator" aria-label="Favorite show" title="Favorite show">★</span>
+                        } @else {
+                          <button
+                            type="button"
+                            class="favorite-show-button"
+                            (click)="addFavorite($event, release)"
+                            [attr.aria-label]="'Add ' + release.title + ' to favorites'"
+                            title="Add to favorites"
+                          >
+                            ☆
+                          </button>
+                        }
+                        <button
+                          type="button"
+                          class="hide-show-button"
+                          (click)="stop($event); store.hideShow(release)"
+                          [attr.aria-label]="'Hide ' + release.title"
+                        >
+                          x
+                        </button>
+                      }
+                    </div>
+
+                    <div class="meta-line">
+                      <time [dateTime]="release.releaseDate">{{ release.releaseDate | date: "EEE, MMM d" }}</time>
+                      @if (release.seasonNumber) {
+                        <span>Season {{ release.seasonNumber }}</span>
+                      }
+                      @if (release.episodeNumber) {
+                        <span>Episode {{ release.episodeNumber }}</span>
+                      }
+                    </div>
+
+                    <div class="source-line">
+                      @if (release.releaseKind === "digital") {
+                        <span class="digital-chip" [class.is-featured]="release.isFeaturedDigital">
+                          {{ release.isFeaturedDigital ? "Featured digital" : "Digital release" }}
+                        </span>
+                      } @else {
+                        @for (source of releaseSources(release); track source.key) {
+                          <button
+                            type="button"
+                            class="source-chip"
+                            (click)="hideProvider($event, source)"
+                            [attr.aria-label]="'Hide ' + source.name"
+                          >
+                            <span>{{ source.name }}</span>
+                            <strong aria-hidden="true">x</strong>
+                          </button>
+                        }
+                      }
+                      @if (formatTmdbRating(release); as rating) {
+                        <small [class]="ratingToneClass(release)">{{ rating }}</small>
+                      }
+                    </div>
+                  </div>
+                </article>
+              }
+            </div>
+          }
+        </section>
+      }
+    </div>
+  }
+</main>

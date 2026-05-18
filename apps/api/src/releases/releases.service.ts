@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { getCacheDecision, getNextExpiry } from "./cache-policy";
 import { RELEASE_REPOSITORY, TMDB_CLIENT, WATCHMODE_CLIENT } from "./release.tokens";
 import type { ReleaseRepository } from "./release.repository";
@@ -16,7 +16,7 @@ export class ReleasesService {
   constructor(
     @Inject(RELEASE_REPOSITORY) private readonly repository: ReleaseRepository,
     @Inject(WATCHMODE_CLIENT) private readonly watchMode: Pick<WatchModeClient, "getReleases">,
-    @Inject(TMDB_CLIENT) private readonly tmdb: Pick<TmdbClient, "isConfigured" | "getDigitalMovieReleases">,
+    @Inject(TMDB_CLIENT) private readonly tmdb: Pick<TmdbClient, "isConfigured" | "getDigitalMovieReleases" | "getTvAirings">,
     private readonly clock: Clock = () => new Date(),
   ) {}
 
@@ -33,8 +33,30 @@ export class ReleasesService {
     forceRefresh: boolean,
   ): Promise<ReleaseWeekResponse> {
     const window = this.buildWindow(weekStartInput);
-    const cache = await this.repository.getFetchCoveringWeek(window.weekStart, window.weekEnd);
     const now = this.clock();
+    const tmdbConfigured = this.tmdb.isConfigured();
+
+    if (tmdbConfigured) {
+      const tmdbWarning = await this.ensureTmdbDigitalMovies(window, now, forceRefresh);
+      const tmdbTvWarning = await this.ensureTmdbTvAirings(window, now, forceRefresh);
+      const releases = [
+        ...(await this.repository.getTmdbDigitalMovies(window.weekStart, window.weekEnd)),
+        ...(await this.repository.getTmdbTvAirings(window.weekStart, window.weekEnd)),
+      ];
+      const cache = await this.getTmdbCacheSnapshot(window.weekStart, window.weekEnd);
+
+      return this.toResponse(
+        window.weekStart,
+        window.weekEnd,
+        dedupeReleases(releases),
+        cache,
+        joinWarnings(tmdbWarning, tmdbTvWarning),
+      );
+    }
+
+    const cache = await this.repository.getFetchCoveringWeek(window.weekStart, window.weekEnd);
+    let warning: string | null = null;
+    let responseCache = cache;
     const decision = getCacheDecision({
       weekStart: window.weekStart,
       now,
@@ -46,29 +68,28 @@ export class ReleasesService {
       try {
         await this.queueRefresh(() => this.fetchAndCache(window, now, forceRefresh));
       } catch (error) {
-        const cachedReleases = await this.repository.getWeekReleases(window.weekStart, window.weekEnd);
+        warning = error instanceof Error ? error.message : "WatchMode refresh failed.";
         if (cache) {
-          return this.toResponse(window.weekStart, window.weekEnd, cachedReleases, {
+          responseCache = {
             ...cache,
             status: "stale",
-            warning: error instanceof Error ? error.message : "WatchMode refresh failed.",
-          });
+            warning,
+          };
         }
-
-        throw new ServiceUnavailableException(
-          error instanceof Error ? error.message : "WatchMode refresh failed.",
-        );
       }
     }
 
-    const tmdbWarning = await this.ensureTmdbDigitalMovies(window, now, forceRefresh);
-
     const releases = [
       ...(await this.repository.getWeekReleases(window.weekStart, window.weekEnd)),
-      ...(await this.repository.getTmdbDigitalMovies(window.weekStart, window.weekEnd)),
     ];
     const freshCache = await this.repository.getFetchCoveringWeek(window.weekStart, window.weekEnd);
-    return this.toResponse(window.weekStart, window.weekEnd, releases, freshCache, tmdbWarning);
+    return this.toResponse(
+      window.weekStart,
+      window.weekEnd,
+      dedupeReleases(releases),
+      responseCache?.status === "stale" ? responseCache : freshCache || responseCache,
+      warning,
+    );
   }
 
   private async fetchAndCache(
@@ -154,6 +175,69 @@ export class ReleasesService {
     }
   }
 
+  private async ensureTmdbTvAirings(
+    window: ReturnType<typeof buildWeekWindow>,
+    now: Date,
+    forceRefresh: boolean,
+  ): Promise<string | null> {
+    if (!this.tmdb.isConfigured()) return null;
+
+    const cache = await this.repository.getTmdbTvWeekCache(window.weekStart);
+    const decision = getCacheDecision({
+      weekStart: window.weekStart,
+      now,
+      cache,
+      forceRefresh,
+    });
+
+    if (!decision.shouldFetch) return null;
+
+    try {
+      const result = await this.tmdb.getTvAirings({
+        weekStart: window.weekStart,
+        weekEnd: window.weekEnd,
+      });
+
+      await this.repository.saveTmdbTvWeek({
+        weekStart: window.weekStart,
+        weekEnd: window.weekEnd,
+        fetchedAt: now,
+        expiresAt: getNextExpiry(window.weekStart, now),
+        releases: result.releases,
+        raw: result.raw,
+      });
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : "TMDB TV refresh failed.";
+    }
+  }
+
+  private async getTmdbCacheSnapshot(
+    weekStart: string,
+    weekEnd: string,
+  ): Promise<FetchCacheSnapshot | null> {
+    const caches = [
+      await this.repository.getTmdbDigitalWeekCache(weekStart),
+      await this.repository.getTmdbTvWeekCache(weekStart),
+    ].filter((cache): cache is NonNullable<typeof cache> => Boolean(cache));
+
+    if (caches.length === 0) return null;
+
+    const fetchedAt = caches
+      .map((cache) => cache.fetchedAt)
+      .filter((value): value is Date => Boolean(value))
+      .sort((a, b) => b.getTime() - a.getTime())[0] || null;
+
+    return {
+      cacheKey: `tmdb:week:${weekStart}:${weekEnd}`,
+      coveredStartDate: weekStart,
+      coveredEndDate: weekEnd,
+      fetchedAt,
+      status: caches.some((cache) => cache.status === "stale") ? "stale" : "fresh",
+      warning: joinWarnings(...caches.map((cache) => cache.warning)),
+    };
+  }
+
   private queueRefresh(refresh: () => Promise<void>): Promise<void> {
     const run = this.refreshChain.catch(() => undefined).then(refresh);
     this.refreshChain = run.catch(() => undefined);
@@ -177,7 +261,7 @@ export class ReleasesService {
         status: cache?.status || "fresh",
         fetchedAt: cache?.fetchedAt?.toISOString() || null,
         expiresAt: expiresAt?.toISOString() || null,
-        warning: [cache?.warning, warning].filter(Boolean).join(" ") || null,
+        warning: joinWarnings(cache?.warning || null, warning),
       },
       movies: sorted.filter((release) => release.mediaType === "movie"),
       tv: sorted.filter((release) => release.mediaType === "tv"),
@@ -210,6 +294,51 @@ function getReleasePriority(release: NormalizedRelease): number {
   if (release.releaseKind === "streaming") return 1;
   if (release.releaseKind === "digital") return 2;
   return 3;
+}
+
+function dedupeReleases(releases: NormalizedRelease[]): NormalizedRelease[] {
+  const byKey = new Map<string, NormalizedRelease>();
+
+  for (const release of releases) {
+    const key = dedupeKey(release);
+    const existing = byKey.get(key);
+    if (!existing || shouldReplaceRelease(existing, release)) {
+      byKey.set(key, release);
+    }
+  }
+
+  return [...byKey.values()];
+}
+
+function dedupeKey(release: NormalizedRelease): string {
+  const base = [
+    release.mediaType,
+    release.tmdbId || release.watchmodeId || release.title.toLowerCase(),
+    release.releaseDate,
+    release.seasonNumber ?? "none",
+    release.episodeNumber ?? "none",
+  ];
+
+  if (release.mediaType === "tv" && release.releaseSource === "tmdb") {
+    return base.join(":");
+  }
+
+  return [...base, normalizeSourceName(release.sourceName)].join(":");
+}
+
+function shouldReplaceRelease(existing: NormalizedRelease, next: NormalizedRelease): boolean {
+  if (existing.releaseSource !== "tmdb" && next.releaseSource === "tmdb") return true;
+  if (existing.releaseSource === "tmdb" && next.releaseSource !== "tmdb") return false;
+  if (existing.sourceName === "TV airing" && next.sourceName !== "TV airing") return true;
+  return false;
+}
+
+function normalizeSourceName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function joinWarnings(...warnings: Array<string | null>): string | null {
+  return [...new Set(warnings.filter(Boolean))].join(" ") || null;
 }
 
 function getFetchCoverage(

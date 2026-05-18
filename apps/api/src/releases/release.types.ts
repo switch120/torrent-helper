@@ -20,9 +20,12 @@ export type NormalizedRelease = {
   sourceName: string;
   sourceType: ReleaseSourceType;
   seasonNumber: number | null;
+  episodeNumber?: number | null;
+  episodeName?: string | null;
   isOriginal: boolean;
   primaryReleaseDate?: string | null;
   popularity?: number | null;
+  voteAverage?: number | null;
   voteCount?: number | null;
   isFeaturedDigital?: boolean;
 };

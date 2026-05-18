@@ -1,5 +1,17 @@
 import type { FetchCacheSnapshot, NormalizedRelease } from "./release.types";
+import type { ReleaseDetail } from "./release-detail.types";
 import type { WatchModeQuota } from "./watchmode.client";
+import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
+
+export type DownloadRecordSnapshot = {
+  id: number;
+  releaseEventId: string;
+  transmissionTorrentId: number | null;
+  torrentName: string;
+  magnetLink: string;
+  magnetHash: string | null;
+  downloadDir: string;
+};
 
 export type SaveWatchModeFetchInput = {
   cacheKey: string;
@@ -30,6 +42,15 @@ export type SaveTmdbDigitalWeekInput = {
   raw: unknown;
 };
 
+export type TmdbTvWeekCacheSnapshot = TmdbDigitalWeekCacheSnapshot;
+export type SaveTmdbTvWeekInput = SaveTmdbDigitalWeekInput;
+
+export type TorrentSearchCacheSnapshot = {
+  results: TorrentResult[];
+  warning: string | null;
+  hasSearchMetadata: boolean;
+};
+
 export interface ReleaseRepository {
   getFetchCoveringWeek(
     weekStart: string,
@@ -46,4 +67,35 @@ export interface ReleaseRepository {
     weekEnd: string,
   ): Promise<NormalizedRelease[]>;
   saveTmdbDigitalWeek(input: SaveTmdbDigitalWeekInput): Promise<void>;
+  getTmdbTvWeekCache(weekStart: string): Promise<TmdbTvWeekCacheSnapshot | null>;
+  getTmdbTvAirings(
+    weekStart: string,
+    weekEnd: string,
+  ): Promise<NormalizedRelease[]>;
+  saveTmdbTvWeek(input: SaveTmdbTvWeekInput): Promise<void>;
+  getReleaseByEventId(eventId: string): Promise<NormalizedRelease | null>;
+  getReleaseDetail(eventId: string): Promise<ReleaseDetail | null>;
+  saveReleaseDetail(detail: ReleaseDetail, fetchedAt: Date): Promise<void>;
+  getTorrentSearchCache(
+    eventId: string,
+    quality: TorrentSearchQuality,
+    now: Date,
+  ): Promise<TorrentSearchCacheSnapshot | null>;
+  saveTorrentSearchCache(input: {
+    eventId: string;
+    quality: TorrentSearchQuality;
+    results: TorrentResult[];
+    raw: unknown;
+    fetchedAt: Date;
+    expiresAt: Date;
+  }): Promise<void>;
+  saveDownloadRecord(input: {
+    releaseEventId: string;
+    transmissionTorrentId: number | null;
+    torrentName: string;
+    magnetLink: string;
+    magnetHash: string | null;
+    downloadDir: string;
+  }): Promise<DownloadRecordSnapshot>;
+  getDownloadRecords(): Promise<DownloadRecordSnapshot[]>;
 }

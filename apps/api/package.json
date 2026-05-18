@@ -20,12 +20,15 @@
     "@nestjs/platform-express": "^11.1.21",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "express-oauth2-jwt-bearer": "^1.8.0",
+    "fast-xml-parser": "^5.8.0",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.1.21",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.19.19",
     "@types/pg": "^8.15.6",
     "prisma": "^7.8.0",

@@ -1,0 +1,86 @@
+<main class="release-shell">
+  <header class="topbar">
+    <div class="title-block">
+      <p class="eyebrow">Transmission</p>
+      <h1>Downloads</h1>
+    </div>
+    <div class="download-actions">
+      @if (proxy(); as proxyStatus) {
+        <div [class]="proxyToneClass(proxyStatus.status)">
+          <strong>{{ proxyStatusLabel(proxyStatus.status) }}</strong>
+          @if (proxyStatus.proxyIp) {
+            <span>VPN IP {{ proxyStatus.proxyIp }}</span>
+          } @else {
+            <span>Checker waiting</span>
+          }
+        </div>
+      }
+      <button type="button" class="refresh-button" [disabled]="refreshing()" (click)="load(false)">
+        {{ refreshing() ? "Refreshing" : "Refresh" }}
+      </button>
+    </div>
+  </header>
+
+  @if (status() === "loading") {
+    <p class="empty-state">Loading Transmission downloads...</p>
+  } @else if (status() === "error") {
+    <p class="empty-state">{{ error() }}</p>
+  } @else if (downloads().length === 0) {
+    @if (error()) {
+      <p class="status-strip is-error">{{ error() }}</p>
+    }
+    <p class="empty-state">No active Transmission downloads.</p>
+  } @else {
+    @if (error()) {
+      <p class="status-strip is-error">{{ error() }}</p>
+    }
+    <section class="download-list">
+      @for (download of downloads(); track download.id) {
+        <article class="download-row">
+          <div>
+            <h2>{{ download.name }}</h2>
+            <p>{{ download.downloadDir }}</p>
+            @if (download.releaseEventId) {
+              <a [routerLink]="modalRoute('release', download.releaseEventId)" queryParamsHandling="preserve">Release detail</a>
+            }
+            @if (download.errorString) {
+              <p class="download-error">{{ download.errorString }}</p>
+            }
+          </div>
+          <div class="download-stats">
+            <span class="digital-chip">{{ download.status }}</span>
+            <strong>{{ progress(download) }}%</strong>
+            <small>{{ formatBytes(download.totalSize) }}</small>
+          </div>
+          <dl class="download-metrics" aria-label="Torrent transfer details">
+            <div>
+              <dt>Peers</dt>
+              <dd>{{ formatPeers(download) }}</dd>
+            </div>
+            <div>
+              <dt>Down</dt>
+              <dd>{{ formatRate(download.rateDownload) }}</dd>
+            </div>
+            <div>
+              <dt>Up</dt>
+              <dd>{{ formatRate(download.rateUpload) }}</dd>
+            </div>
+            <div>
+              <dt>ETA</dt>
+              <dd>{{ formatEta(download.eta) }}</dd>
+            </div>
+            <div>
+              <dt>Left</dt>
+              <dd>{{ formatBytes(download.leftUntilDone) }}</dd>
+            </div>
+            <div>
+              <dt>Ratio</dt>
+              <dd>{{ download.uploadRatio | number: "1.2-2" }}</dd>
+            </div>
+          </dl>
+          <progress [value]="download.percentDone" max="1"></progress>
+        </article>
+      }
+    </section>
+  }
+</main>

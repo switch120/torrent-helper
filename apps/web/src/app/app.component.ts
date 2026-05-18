@@ -1,28 +1,56 @@
 import { CommonModule } from "@angular/common";
-import { Component, OnInit, inject } from "@angular/core";
-import { FormsModule } from "@angular/forms";
-import { ReleaseWeekStore } from "./release-week.store";
-import { releaseKey, startOfIsoWeek } from "./release-week.utils";
-import type { DigitalRelease } from "./release.models";
+import { Component, HostListener, ViewEncapsulation, inject, signal } from "@angular/core";
+import { AuthService } from "@auth0/auth0-angular";
+import { Router, RouterLink, RouterOutlet } from "@angular/router";
+import { closeModalRoute, modalRoute } from "./route-modal.utils";
 
 @Component({
   selector: "app-root",
   standalone: true,
-  imports: [CommonModule, FormsModule],
-  providers: [ReleaseWeekStore],
+  imports: [CommonModule, RouterLink, RouterOutlet],
   templateUrl: "./app.component.html",
   styleUrl: "./app.component.css",
+  encapsulation: ViewEncapsulation.None,
 })
-export class AppComponent implements OnInit {
-  readonly store = inject(ReleaseWeekStore);
-  readonly releaseKey = (_index: number, release: DigitalRelease) => releaseKey(release);
+export class AppComponent {
+  readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
 
-  ngOnInit(): void {
-    void this.store.loadWeek();
+  readonly modalActive = signal(false);
+  readonly closeModalRoute = closeModalRoute;
+  readonly modalRoute = modalRoute;
+
+  login(): void {
+    this.auth.loginWithRedirect({
+      authorizationParams: {
+        connection: "google-oauth2",
+      },
+    }).subscribe();
   }
 
-  onDateChange(value: string): void {
-    if (!value) return;
-    void this.store.loadWeek(startOfIsoWeek(new Date(`${value}T00:00:00.000Z`)));
+  logout(): void {
+    this.auth.logout({
+      logoutParams: {
+        returnTo: window.location.origin,
+      },
+    }).subscribe();
+  }
+
+  onModalActivate(): void {
+    this.modalActive.set(true);
+  }
+
+  onModalDeactivate(): void {
+    this.modalActive.set(false);
+  }
+
+  closeModal(): void {
+    if (!this.modalActive()) return;
+    void this.router.navigate(closeModalRoute(), { queryParamsHandling: "preserve" });
+  }
+
+  @HostListener("document:keydown.escape")
+  onEscape(): void {
+    this.closeModal();
   }
 }

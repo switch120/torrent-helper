@@ -1,0 +1,210 @@
+<main class="detail-shell">
+  <a class="back-link" routerLink="/" queryParamsHandling="preserve">Back to releases</a>
+
+  @if (status() === "loading") {
+    <section class="detail-loading">Loading release details...</section>
+  } @else if (status() === "error") {
+    <section class="empty-state">{{ error() }}</section>
+  } @else if (detail(); as item) {
+    <section class="detail-hero" [style.background-image]="item.backdropUrl ? 'linear-gradient(90deg, rgba(13, 24, 28, 0.92), rgba(13, 24, 28, 0.58)), url(' + item.backdropUrl + ')' : null">
+      <div class="detail-poster">
+        @if (item.posterUrl) {
+          <img [src]="item.posterUrl" [alt]="item.title + ' poster'">
+        } @else {
+          <span>{{ item.title.slice(0, 1) }}</span>
+        }
+      </div>
+      <div class="detail-copy">
+        <p class="eyebrow">{{ item.mediaType === "movie" ? "Movie" : "TV" }}</p>
+        <h1>{{ item.title }}</h1>
+        <div class="detail-meta">
+          @if (item.releaseDate) {
+            <time [dateTime]="item.releaseDate">{{ item.releaseDate | date: "MMM d, y" }}</time>
+          }
+          @if (item.seasonNumber) {
+            <span>Season {{ item.seasonNumber }}</span>
+          }
+          @if (item.episodeCount) {
+            <span>{{ item.episodeCount }} episodes</span>
+          }
+          @if (item.runtimeMinutes) {
+            <span>{{ item.runtimeMinutes }} min</span>
+          }
+        </div>
+        <p class="overview">{{ item.overview || "No overview is cached for this release yet." }}</p>
+        <div class="source-line">
+          @for (genre of item.genres; track genre) {
+            <small>{{ genre }}</small>
+          }
+          @if (item.imdbId) {
+            <small>{{ item.imdbId }}</small>
+          }
+          @if (item.tmdbId) {
+            <small>TMDB {{ item.tmdbId }}</small>
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="cast-strip" aria-label="Cast">
+      <h2>Cast</h2>
+      <div class="cast-list">
+        @for (member of item.cast; track member.id + member.name) {
+          <a
+            class="cast-card cast-card-link"
+            [href]="castProfileUrl(member)"
+            target="_blank"
+            rel="noopener noreferrer"
+            [attr.aria-label]="'Open ' + member.name + ' on TMDB'"
+          >
+            <ng-container *ngTemplateOutlet="castCardContent; context: { $implicit: member }"></ng-container>
+          </a>
+        } @empty {
+          <p class="empty-state">No cast data cached yet.</p>
+        }
+      </div>
+    </section>
+
+    <section class="torrent-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Torrent search</p>
+          <h2>Torrent results</h2>
+        </div>
+        <div class="torrent-controls">
+          <select [ngModel]="quality()" (ngModelChange)="setQuality($event)" aria-label="Quality filter">
+            <option value="any">Any quality</option>
+            <option value="1080p">1080p</option>
+            <option value="2160p">2160p</option>
+          </select>
+          <select [ngModel]="sortKey()" (ngModelChange)="setSortKey($event)" aria-label="Sort torrents">
+            <option value="seeders">Seeders</option>
+            <option value="size">File size</option>
+            <option value="quality">Quality</option>
+            <option value="confidence">Confidence</option>
+          </select>
+          <button type="button" class="refresh-button" (click)="search()" [disabled]="torrentStatus() === 'loading'">
+            {{ fetchButtonLabel() }}
+          </button>
+        </div>
+      </div>
+
+      @if (torrentWarning()) {
+        <p class="empty-state">{{ torrentWarning() }}</p>
+      }
+
+      @if (torrentStatus() === "loading") {
+        <p class="empty-state">Searching configured Prowlarr indexers...</p>
+      } @else if (!hasFetchedTorrents()) {
+        <p class="empty-state">
+          Torrent search is paused until you ask for it. Use Fetch torrents, or hold at the bottom of this page.
+        </p>
+      } @else if (sortedTorrents().length === 0) {
+        <p class="empty-state">No magnet links found from configured indexers.</p>
+      } @else {
+        <div class="torrent-table">
+          <div class="torrent-row torrent-head">
+            <span>Title</span>
+            <span>Quality</span>
+            <span>Size</span>
+            <span>S/L</span>
+            <span>Confidence</span>
+            <span></span>
+          </div>
+          @for (torrent of sortedTorrents(); track torrent.id) {
+            <div class="torrent-row" [class.torrent-row-muted]="torrent.quality === 'unknown'">
+              <div>
+                <strong>{{ torrent.title }}</strong>
+                <small>{{ torrent.indexer }} · {{ formatTorrentAge(torrent.publishedAt) }}</small>
+              </div>
+              <span class="quality-pill" [ngClass]="qualityTone(torrent.quality)">{{ torrent.quality }}</span>
+              <span>{{ formatBytes(torrent.sizeBytes) }}</span>
+              <span>{{ torrent.seeders }}/{{ torrent.leechers }}</span>
+              <span class="confidence-pill" [ngClass]="confidenceTone(torrent.confidence)">
+                {{ confidenceLabel(torrent.confidence) }}
+              </span>
+              <button type="button" class="refresh-button" (click)="openAddDialog(torrent)">Add</button>
+            </div>
+          }
+        </div>
+      }
+    </section>
+
+    <div #bottomFetchSentinel class="bottom-fetch-sentinel" aria-hidden="true"></div>
+  }
+</main>
+
+@if (bottomHoldActive()) {
+  <aside class="bottom-fetch-cue" role="status" aria-live="polite">
+    <strong>{{ bottomHoldLabel() }}</strong>
+    <span>Keep the bottom of the page in view.</span>
+    <div class="bottom-fetch-meter" aria-hidden="true">
+      <i [style.width]="bottomHoldPercent()"></i>
+    </div>
+  </aside>
+}
+
+@if (selectedTorrent(); as torrent) {
+  <div class="modal-backdrop" role="presentation" (click)="closeAddDialog()">
+    <section
+      class="add-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add torrent"
+      (click)="$event.stopPropagation()"
+      (keydown.escape)="$event.stopPropagation(); closeAddDialog()"
+    >
+      <div class="add-dialog-header">
+        <div>
+          <p class="eyebrow">Transmission</p>
+          <h2>Add torrent</h2>
+        </div>
+        <button type="button" class="borderless-button add-dialog-close" (click)="closeAddDialog()" aria-label="Close add torrent dialog">&times;</button>
+      </div>
+      <p class="add-dialog-title">{{ torrent.title }}</p>
+      <div class="source-line">
+        <small>{{ torrent.quality }}</small>
+        <small>{{ formatBytes(torrent.sizeBytes) }}</small>
+        <small>{{ torrent.seeders }}/{{ torrent.leechers }} S/L</small>
+        <small>{{ formatTorrentAge(torrent.publishedAt) }}</small>
+      </div>
+      <label>
+        Save to
+        <select [ngModel]="downloadDir()" (ngModelChange)="downloadDir.set($event)">
+          <option value="/data/Movies/Sourced">/data/Movies/Sourced</option>
+          <option value="/data/Movies/4k">/data/Movies/4k</option>
+          <option value="custom">Custom /data path</option>
+        </select>
+      </label>
+      @if (downloadDir() === "custom") {
+        <label>
+          Custom path
+          <input type="text" [ngModel]="customDownloadDir()" (ngModelChange)="customDownloadDir.set($event)" placeholder="/data/Movies/Sourced">
+        </label>
+      }
+      @if (addError()) {
+        <p class="empty-state">{{ addError() }}</p>
+      }
+      <div class="dialog-actions">
+        <button type="button" class="source-chip" (click)="closeAddDialog()">Cancel</button>
+        <button type="button" class="refresh-button" (click)="addSelectedTorrent()" [disabled]="addStatus() === 'adding'">
+          {{ addStatus() === "adding" ? "Adding..." : "Add to Transmission" }}
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+<ng-template #castCardContent let-member>
+  <div class="cast-media">
+    @if (member.profileUrl) {
+      <img [src]="member.profileUrl" [alt]="member.name">
+    } @else {
+      <span>{{ member.name.slice(0, 1) }}</span>
+    }
+  </div>
+  <strong class="cast-name">{{ member.name }}</strong>
+  @if (member.character) {
+    <small>{{ member.character }}</small>
+  }
+</ng-template>

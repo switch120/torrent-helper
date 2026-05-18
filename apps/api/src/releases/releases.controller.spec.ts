@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { describe, expect, it, vi } from "vitest";
 import { ReleasesController } from "./releases.controller";
+import { ReleaseWorkflowService } from "./release-workflow.service";
 import { ReleasesService } from "./releases.service";
 
 describe("ReleasesController", () => {
@@ -11,7 +12,10 @@ describe("ReleasesController", () => {
     };
     const moduleRef = await Test.createTestingModule({
       controllers: [ReleasesController],
-      providers: [{ provide: ReleasesService, useValue: releasesService }],
+      providers: [
+        { provide: ReleasesService, useValue: releasesService },
+        { provide: ReleaseWorkflowService, useValue: {} },
+      ],
     }).compile();
 
     const controller = moduleRef.get(ReleasesController);

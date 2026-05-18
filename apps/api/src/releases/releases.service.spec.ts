@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ReleasesService } from "./releases.service";
 import type { ReleaseRepository } from "./release.repository";
 import type { NormalizedRelease } from "./release.types";
-import type { TmdbDigitalReleaseResult } from "./tmdb.client";
+import type { TmdbDigitalReleaseResult, TmdbTvAiringResult } from "./tmdb.client";
 import type { WatchModeReleaseResult } from "./watchmode.client";
 
 describe("ReleasesService", () => {
@@ -50,8 +50,8 @@ describe("ReleasesService", () => {
     const result = await service.getWeek("2026-05-11");
 
     expect(watchMode.getReleases).toHaveBeenCalledWith({
-      startDate: 20260511000000,
-      endDate: 20260517235959,
+      startDate: 20260511,
+      endDate: 20260517,
     });
     expect(repository.saveWatchModeFetch).toHaveBeenCalled();
     expect(result.movies.map((item) => item.title)).toEqual(["Movie"]);
@@ -206,7 +206,7 @@ describe("ReleasesService", () => {
     expect(result.movies.map((item) => item.title)).toEqual(["Old Movie"]);
   });
 
-  it("returns a service-unavailable error when WatchMode fails without cached data", async () => {
+  it("returns an empty week with a warning when WatchMode fails without cached data", async () => {
     const repository = createRepository();
     repository.getFetchCoveringWeek.mockResolvedValue(null);
     repository.getWeekReleases.mockResolvedValue([]);
@@ -214,12 +214,11 @@ describe("ReleasesService", () => {
     watchMode.getReleases.mockRejectedValue(new Error("WATCHMODE_API_KEY is required"));
     const service = new ReleasesService(repository, watchMode, createTmdb({ configured: false }), () => new Date("2026-05-16T12:00:00.000Z"));
 
-    await expect(service.getWeek("2026-05-11")).rejects.toMatchObject({
-      response: {
-        statusCode: 503,
-        message: "WATCHMODE_API_KEY is required",
-      },
-    });
+    const result = await service.getWeek("2026-05-11");
+
+    expect(result.cache.warning).toContain("WATCHMODE_API_KEY is required");
+    expect(result.movies).toEqual([]);
+    expect(result.tv).toEqual([]);
   });
 
   it("returns a bad request error for invalid week dates", async () => {
@@ -293,12 +292,210 @@ describe("ReleasesService", () => {
       }),
     );
     expect(result.movies.map((item) => item.title)).toEqual([
-      "WatchMode Movie",
       "TMDB Digital Movie",
     ]);
   });
 
-  it("keeps WatchMode releases available when TMDB digital refresh fails", async () => {
+  it("adds cached TMDB TV airings into the TV silo when WatchMode misses weekly episodes", async () => {
+    const repository = createRepository();
+    repository.getFetchCoveringWeek.mockResolvedValue({
+      cacheKey: "watchmode:releases:20260511000000:20260517235959",
+      coveredStartDate: "2026-05-11",
+      coveredEndDate: "2026-05-17",
+      fetchedAt: new Date("2026-05-16T08:00:00.000Z"),
+      status: "fresh",
+      warning: null,
+    });
+    repository.getWeekReleases.mockResolvedValue([]);
+    repository.getTmdbTvAirings.mockResolvedValue([
+      release({
+        eventId: "tmdb:tv:87917:350:2026-05-15:5:8",
+        watchmodeId: 87917,
+        releaseSource: "tmdb",
+        releaseKind: "streaming",
+        title: "For All Mankind",
+        titleType: "tv_series",
+        mediaType: "tv",
+        tmdbId: 87917,
+        tmdbType: "tv",
+        sourceId: 350,
+        sourceName: "Apple TV+",
+        sourceType: "sub",
+        releaseDate: "2026-05-15",
+        seasonNumber: 5,
+        episodeNumber: 8,
+        episodeName: "In the Week",
+      }),
+    ]);
+    const tmdbTvRelease = release({
+      eventId: "tmdb:tv:87917:350:2026-05-15:5:8",
+      watchmodeId: 87917,
+      releaseSource: "tmdb",
+      releaseKind: "streaming",
+      title: "For All Mankind",
+      titleType: "tv_series",
+      mediaType: "tv",
+      tmdbId: 87917,
+      tmdbType: "tv",
+      sourceId: 350,
+      sourceName: "Apple TV+",
+      sourceType: "sub",
+      releaseDate: "2026-05-15",
+      seasonNumber: 5,
+      episodeNumber: 8,
+      episodeName: "In the Week",
+    });
+    const tmdb = createTmdb({ tvReleases: [tmdbTvRelease] });
+    const service = new ReleasesService(repository, createWatchMode(), tmdb, () => new Date("2026-05-16T12:00:00.000Z"));
+
+    const result = await service.getWeek("2026-05-11");
+
+    expect(repository.saveTmdbTvWeek).toHaveBeenCalledWith(
+      expect.objectContaining({
+        weekStart: "2026-05-11",
+        weekEnd: "2026-05-17",
+        releases: [expect.objectContaining({ title: "For All Mankind" })],
+      }),
+    );
+    expect(result.tv.map((item) => item.title)).toEqual(["For All Mankind"]);
+  });
+
+  it("uses TMDB weekly data as the primary release surface when TMDB is configured", async () => {
+    const repository = createRepository();
+    repository.getFetchCoveringWeek.mockResolvedValue(null);
+    repository.getWeekReleases.mockResolvedValue([
+      release({
+        eventId: "wm:tv:bad-provider",
+        title: "Your Friends & Neighbors",
+        mediaType: "tv",
+        releaseSource: "watchmode",
+        sourceName: "Prime Video",
+        releaseDate: "2026-05-14",
+      }),
+    ]);
+    repository.getTmdbDigitalMovies.mockResolvedValue([
+      release({
+        eventId: "tmdb:digital:100:2026-05-12",
+        watchmodeId: 100,
+        releaseSource: "tmdb",
+        releaseKind: "digital",
+        title: "TMDB Movie",
+        mediaType: "movie",
+        tmdbId: 100,
+        sourceName: "Digital release",
+        sourceType: "digital",
+        releaseDate: "2026-05-12",
+      }),
+    ]);
+    repository.getTmdbTvAirings.mockResolvedValue([
+      release({
+        eventId: "tmdb:tv:241609:2026-05-14:2:7",
+        watchmodeId: 241609,
+        releaseSource: "tmdb",
+        releaseKind: "streaming",
+        title: "Your Friends & Neighbors",
+        titleType: "tv_series",
+        mediaType: "tv",
+        tmdbId: 241609,
+        tmdbType: "tv",
+        sourceId: 2552,
+        sourceName: "Apple TV+",
+        sourceType: "unknown",
+        releaseDate: "2026-05-14",
+        seasonNumber: 2,
+        episodeNumber: 7,
+      }),
+    ]);
+    const watchMode = createWatchMode();
+    const service = new ReleasesService(repository, watchMode, createTmdb(), () => new Date("2026-05-16T12:00:00.000Z"));
+
+    const result = await service.getWeek("2026-05-11");
+
+    expect(watchMode.getReleases).not.toHaveBeenCalled();
+    expect(repository.getWeekReleases).not.toHaveBeenCalled();
+    expect(result.movies.map((item) => item.title)).toEqual(["TMDB Movie"]);
+    expect(result.tv.map((item) => item.sourceName)).toEqual(["Apple TV+"]);
+  });
+
+  it("collapses duplicate TMDB TV cached rows for the same episode", async () => {
+    const repository = createRepository();
+    repository.getTmdbTvAirings.mockResolvedValue([
+      release({
+        eventId: "tmdb:tv:241609:350:2026-05-14:2:7",
+        watchmodeId: 241609,
+        releaseSource: "tmdb",
+        releaseKind: "streaming",
+        title: "Your Friends & Neighbors",
+        titleType: "tv_series",
+        mediaType: "tv",
+        tmdbId: 241609,
+        tmdbType: "tv",
+        sourceId: 2552,
+        sourceName: "Apple TV+",
+        sourceType: "unknown",
+        releaseDate: "2026-05-14",
+        seasonNumber: 2,
+        episodeNumber: 7,
+      }),
+      release({
+        eventId: "tmdb:tv:241609:9:2026-05-14:2:7",
+        watchmodeId: 241609,
+        releaseSource: "tmdb",
+        releaseKind: "streaming",
+        title: "Your Friends & Neighbors",
+        titleType: "tv_series",
+        mediaType: "tv",
+        tmdbId: 241609,
+        tmdbType: "tv",
+        sourceId: 9,
+        sourceName: "Prime Video",
+        sourceType: "sub",
+        releaseDate: "2026-05-14",
+        seasonNumber: 2,
+        episodeNumber: 7,
+      }),
+    ]);
+    const service = new ReleasesService(repository, createWatchMode(), createTmdb(), () => new Date("2026-05-16T12:00:00.000Z"));
+
+    const result = await service.getWeek("2026-05-11");
+
+    expect(result.tv).toHaveLength(1);
+    expect(result.tv[0]).toEqual(expect.objectContaining({
+      eventId: "tmdb:tv:241609:350:2026-05-14:2:7",
+      sourceName: "Apple TV+",
+    }));
+  });
+
+  it("keeps returning TMDB-primary weekly rows when WatchMode fails without a cache", async () => {
+    const repository = createRepository();
+    repository.getFetchCoveringWeek.mockResolvedValue(null);
+    repository.getWeekReleases.mockResolvedValue([]);
+    repository.getTmdbDigitalMovies.mockResolvedValue([
+      release({
+        eventId: "tmdb:digital:100:2026-05-12",
+        watchmodeId: 100,
+        releaseSource: "tmdb",
+        releaseKind: "digital",
+        title: "Digital Movie",
+        mediaType: "movie",
+        tmdbId: 100,
+        sourceName: "Digital release",
+        sourceType: "digital",
+        releaseDate: "2026-05-12",
+      }),
+    ]);
+    const watchMode = createWatchMode();
+    watchMode.getReleases.mockRejectedValue(new Error("WATCHMODE_API_KEY is required"));
+    const service = new ReleasesService(repository, watchMode, createTmdb(), () => new Date("2026-05-16T12:00:00.000Z"));
+
+    const result = await service.getWeek("2026-05-11");
+
+    expect(result.movies.map((item) => item.title)).toEqual(["Digital Movie"]);
+    expect(watchMode.getReleases).not.toHaveBeenCalled();
+    expect(result.cache.warning).toBeNull();
+  });
+
+  it("returns a TMDB warning without falling back to WatchMode rows when TMDB refresh fails", async () => {
     const repository = createRepository();
     repository.getFetchCoveringWeek.mockResolvedValue({
       cacheKey: "watchmode:releases:20260511000000:20260517235959",
@@ -319,11 +516,12 @@ describe("ReleasesService", () => {
 
     const result = await service.getWeek("2026-05-11");
 
-    expect(result.movies.map((item) => item.title)).toEqual(["WatchMode Movie"]);
+    expect(watchMode.getReleases).not.toHaveBeenCalled();
+    expect(result.movies).toEqual([]);
     expect(result.cache.warning).toBe("TMDB 401: Unauthorized");
   });
 
-  it("puts featured TMDB digital movies first and moves old catalog digital rows below streaming rows", async () => {
+  it("puts featured TMDB digital movies first and moves old catalog digital rows lower", async () => {
     const repository = createRepository();
     repository.getFetchCoveringWeek.mockResolvedValue({
       cacheKey: "watchmode:releases:20260511000000:20260517235959",
@@ -377,13 +575,12 @@ describe("ReleasesService", () => {
         isFeaturedDigital: true,
       }),
     ]);
-    const service = new ReleasesService(repository, createWatchMode(), createTmdb({ configured: false }), () => new Date("2026-05-16T12:00:00.000Z"));
+    const service = new ReleasesService(repository, createWatchMode(), createTmdb(), () => new Date("2026-05-16T12:00:00.000Z"));
 
     const result = await service.getWeek("2026-05-11");
 
     expect(result.movies.map((item) => item.title)).toEqual([
       "Big New Movie",
-      "Streaming Movie",
       "Old Catalog Classic",
     ]);
   });
@@ -397,6 +594,16 @@ function createRepository() {
     getTmdbDigitalWeekCache: vi.fn().mockResolvedValue(null),
     getTmdbDigitalMovies: vi.fn().mockResolvedValue([]),
     saveTmdbDigitalWeek: vi.fn().mockResolvedValue(undefined),
+    getTmdbTvWeekCache: vi.fn().mockResolvedValue(null),
+    getTmdbTvAirings: vi.fn().mockResolvedValue([]),
+    saveTmdbTvWeek: vi.fn().mockResolvedValue(undefined),
+    getReleaseByEventId: vi.fn().mockResolvedValue(null),
+    getReleaseDetail: vi.fn().mockResolvedValue(null),
+    saveReleaseDetail: vi.fn().mockResolvedValue(undefined),
+    getTorrentSearchCache: vi.fn().mockResolvedValue(null),
+    saveTorrentSearchCache: vi.fn().mockResolvedValue(undefined),
+    saveDownloadRecord: vi.fn(),
+    getDownloadRecords: vi.fn().mockResolvedValue([]),
   } satisfies ReleaseRepository;
 }
 
@@ -411,13 +618,17 @@ function createWatchMode(result: Partial<WatchModeReleaseResult> = {}) {
   };
 }
 
-function createTmdb(result: Partial<TmdbDigitalReleaseResult> & { configured?: boolean } = {}) {
+function createTmdb(result: Partial<TmdbDigitalReleaseResult> & { configured?: boolean; tvReleases?: TmdbTvAiringResult["releases"] } = {}) {
   return {
     isConfigured: vi.fn().mockReturnValue(result.configured ?? true),
     getDigitalMovieReleases: vi.fn().mockResolvedValue({
       releases: [],
       raw: { results: [] },
       ...result,
+    }),
+    getTvAirings: vi.fn().mockResolvedValue({
+      releases: result.tvReleases || [],
+      raw: { results: [] },
     }),
   };
 }
@@ -459,6 +670,24 @@ function createStatefulRepository(): ReleaseRepository {
     getTmdbDigitalWeekCache: vi.fn(async () => null),
     getTmdbDigitalMovies: vi.fn(async () => []),
     saveTmdbDigitalWeek: vi.fn(async () => undefined),
+    getTmdbTvWeekCache: vi.fn(async () => null),
+    getTmdbTvAirings: vi.fn(async () => []),
+    saveTmdbTvWeek: vi.fn(async () => undefined),
+    getReleaseByEventId: vi.fn(async () => null),
+    getReleaseDetail: vi.fn(async () => null),
+    saveReleaseDetail: vi.fn(async () => undefined),
+    getTorrentSearchCache: vi.fn(async () => null),
+    saveTorrentSearchCache: vi.fn(async () => undefined),
+    saveDownloadRecord: vi.fn(async () => ({
+      id: 1,
+      releaseEventId: "event",
+      transmissionTorrentId: 1,
+      torrentName: "Torrent",
+      magnetLink: "magnet:?xt=urn:btih:abc",
+      magnetHash: "abc",
+      downloadDir: "/data/Movies/Sourced",
+    })),
+    getDownloadRecords: vi.fn(async () => []),
   };
 }
 
@@ -489,5 +718,7 @@ function baseRelease(): NormalizedRelease {
     popularity: null,
     voteCount: null,
     isFeaturedDigital: false,
+    episodeNumber: null,
+    episodeName: null,
   };
 }

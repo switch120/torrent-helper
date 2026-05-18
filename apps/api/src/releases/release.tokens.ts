@@ -1,3 +1,5 @@
 export const RELEASE_REPOSITORY = Symbol("RELEASE_REPOSITORY");
 export const WATCHMODE_CLIENT = Symbol("WATCHMODE_CLIENT");
 export const TMDB_CLIENT = Symbol("TMDB_CLIENT");
+export const PROWLARR_CLIENT = Symbol("PROWLARR_CLIENT");
+export const TRANSMISSION_CLIENT = Symbol("TRANSMISSION_CLIENT");

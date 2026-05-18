@@ -21,8 +21,13 @@ describe("week utilities", () => {
 
     expect(window.weekStart).toBe("2026-05-11");
     expect(window.weekEnd).toBe("2026-05-17");
-    expect(window.watchModeStart).toBe(20260511000000);
-    expect(window.watchModeEnd).toBe(20260517235959);
+    expect(window.watchModeStart).toBe(20260511);
+    expect(window.watchModeEnd).toBe(20260517);
+  });
+
+  it("formats WatchMode dates as date-only values", () => {
+    expect(formatWatchModeDateTime(new Date("2026-05-11T00:00:00.000Z"), "start")).toBe(20260511);
+    expect(formatWatchModeDateTime(addDays(new Date("2026-05-11T00:00:00.000Z"), 6), "end")).toBe(20260517);
   });
 
   it("classifies past, current, and future weeks from a provided clock", () => {
@@ -31,10 +36,5 @@ describe("week utilities", () => {
     expect(classifyWeek("2026-05-04", now)).toBe("past");
     expect(classifyWeek("2026-05-11", now)).toBe("current");
     expect(classifyWeek("2026-05-18", now)).toBe("future");
-  });
-
-  it("formats dates without timezone drift", () => {
-    expect(formatWatchModeDateTime(new Date("2026-05-11T00:00:00.000Z"), "start")).toBe(20260511000000);
-    expect(formatWatchModeDateTime(addDays(new Date("2026-05-11T00:00:00.000Z"), 6), "end")).toBe(20260517235959);
   });
 });

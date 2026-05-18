@@ -71,6 +71,7 @@ model TmdbDigitalMovie {
   releaseDate          DateTime @db.Date
   primaryReleaseDate   DateTime? @db.Date
   popularity           Float?
+  voteAverage          Float?
   voteCount            Int?
   isFeaturedDigital    Boolean  @default(false)
   raw                  Json
@@ -80,6 +81,45 @@ model TmdbDigitalMovie {
   @@index([releaseDate])
   @@index([tmdbId])
   @@index([isFeaturedDigital])
+  @@index([popularity])
+}
+
+model TmdbTvWeekCache {
+  weekStart   DateTime @id @db.Date
+  weekEnd     DateTime @db.Date
+  status      String
+  warning     String?
+  fetchedAt   DateTime?
+  expiresAt   DateTime?
+  rawResponse Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TmdbTvAiring {
+  eventId          String   @id
+  tmdbId           Int
+  title            String
+  titleType        String
+  posterUrl        String?
+  releaseDate      DateTime @db.Date
+  firstAirDate     DateTime? @db.Date
+  providerId       Int
+  providerName     String
+  seasonNumber     Int?
+  episodeNumber    Int?
+  episodeName      String?
+  imdbId           String?
+  popularity       Float?
+  voteAverage      Float?
+  voteCount        Int?
+  raw              Json
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([releaseDate])
+  @@index([tmdbId])
+  @@index([providerId])
   @@index([popularity])
 }
 
@@ -99,4 +139,101 @@ model ReleaseEvent {
   @@index([releaseDate])
   @@index([titleId])
   @@index([sourceId])
+}
+
+model ReleaseDetailCache {
+  eventId   String   @id
+  tmdbId    Int?
+  mediaType String
+  detail    Json
+  raw       Json
+  fetchedAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tmdbId])
+}
+
+model TorrentSearchCache {
+  cacheKey  String   @id
+  eventId   String
+  quality   String
+  results   Json
+  raw       Json?
+  fetchedAt DateTime
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([expiresAt])
+}
+
+model DownloadRecord {
+  id                    Int      @id @default(autoincrement())
+  releaseEventId        String
+  transmissionTorrentId Int?
+  torrentName           String
+  magnetLink            String
+  magnetHash            String?
+  downloadDir           String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([releaseEventId])
+  @@index([transmissionTorrentId])
+  @@index([magnetHash])
+}
+
+model AppUser {
+  id        Int            @id @default(autoincrement())
+  auth0Sub  String         @unique
+  email     String         @unique
+  name      String?
+  pictureUrl String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  settings  UserSettings?
+  favorites FavoriteShow[]
+}
+
+model UserSettings {
+  userId            Int      @id
+  hiddenProviders   Json?
+  hiddenShowKeys    Json?
+  showOnlyFavorites Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model FavoriteShow {
+  id                  Int      @id @default(autoincrement())
+  userId              Int
+  showKey             String
+  tmdbId              Int?
+  watchmodeId         Int?
+  title               String
+  posterUrl           String?
+  backdropUrl         String?
+  overview            String?
+  status              String?
+  isCanceled          Boolean  @default(false)
+  currentSeasonNumber Int?
+  numberOfSeasons     Int?
+  numberOfEpisodes    Int?
+  lastAirDate         DateTime? @db.Date
+  lastEpisode         Json?
+  nextEpisode         Json?
+  releaseContext      Json?
+  raw                 Json?
+  fetchedAt           DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, showKey])
+  @@index([userId])
+  @@index([tmdbId])
+  @@index([watchmodeId])
 }

@@ -55,8 +55,8 @@ export function classifyWeek(weekStart: string, now = new Date()): WeekKind {
 }
 
 export function formatWatchModeDateTime(date: Date, edge: "start" | "end"): number {
-  const datePart = formatDateOnly(date).replaceAll("-", "");
-  return Number(`${datePart}${edge === "start" ? "000000" : "235959"}`);
+  void edge;
+  return Number(formatDateOnly(date).replaceAll("-", ""));
 }
 
 export function formatDateOnly(date: Date): string {
