@@ -2,6 +2,34 @@ import { describe, expect, it } from "vitest";
 import { TmdbClient } from "./tmdb.client";
 
 describe("TmdbClient", () => {
+  it("retries TMDB rate limit responses before failing the request", async () => {
+    let calls = 0;
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      retryDelayMs: 0,
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return new Response(JSON.stringify({ status_message: "Too many requests" }), {
+            status: 429,
+            statusText: "Too Many Requests",
+            headers: { "Retry-After": "0" },
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 100,
+            title: "Recovered Movie",
+          }),
+        );
+      },
+    });
+
+    await expect(client.getMovieDetail(100)).resolves.toEqual(expect.objectContaining({ title: "Recovered Movie" }));
+    expect(calls).toBe(2);
+  });
+
   it("discovers US digital movies and hydrates their digital release date", async () => {
     const calls: string[] = [];
     const client = new TmdbClient({
@@ -90,7 +118,7 @@ describe("TmdbClient", () => {
     ]);
     expect(result.raw).toEqual(
       expect.objectContaining({
-        digitalDatePolicy: "original-us-digital-with-streaming-providers-v1",
+        digitalDatePolicy: "original-us-digital-with-provider-backed-fallback-v2",
       }),
     );
   });
@@ -244,6 +272,24 @@ describe("TmdbClient", () => {
           );
         }
 
+        if (url.includes("/watch/providers")) {
+          return new Response(
+            JSON.stringify({
+              id: 1398050,
+              results: {
+                US: {
+                  buy: [
+                    {
+                      provider_id: 2,
+                      provider_name: "Apple TV Store",
+                    },
+                  ],
+                },
+              },
+            }),
+          );
+        }
+
         return new Response(
           JSON.stringify({
             id: 1398050,
@@ -279,6 +325,72 @@ describe("TmdbClient", () => {
         isDigitalDateFallback: true,
       }),
     ]);
+  });
+
+  it("excludes same-week theatrical movies when TMDB has no digital availability", async () => {
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      fetchImpl: async (url) => {
+        if (url.includes("/discover/movie") && url.includes("with_release_type=4")) {
+          return new Response(JSON.stringify({ page: 1, total_pages: 1, results: [] }));
+        }
+
+        if (url.includes("/discover/movie")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: [
+                {
+                  id: 1005331,
+                  title: "The Mandalorian and Grogu",
+                  poster_path: "/mandalorian.jpg",
+                  release_date: "2026-05-22",
+                  popularity: 100.5,
+                  vote_count: 1000,
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url.includes("/watch/providers")) {
+          return new Response(
+            JSON.stringify({
+              id: 1005331,
+              results: {
+                US: {},
+              },
+            }),
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 1005331,
+            results: [
+              {
+                iso_3166_1: "US",
+                release_dates: [
+                  {
+                    note: "Theatrical",
+                    release_date: "2026-05-22T00:00:00.000Z",
+                    type: 3,
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getDigitalMovieReleases({
+      weekStart: "2026-05-18",
+      weekEnd: "2026-05-24",
+    });
+
+    expect(result.releases).toEqual([]);
   });
 
   it("hydrates movie streaming providers without treating rental stores as streaming availability", async () => {

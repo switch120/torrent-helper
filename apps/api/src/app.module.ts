@@ -58,7 +58,7 @@ import { UserSettingsService } from "./users/user-settings.service";
           apiKey: process.env.PROWLARR_API_KEY,
           openAiApiKey: process.env.OPENAI_API_KEY,
           openAiModel: process.env.OPENAI_MODEL,
-          openAiRerankEnabled: process.env.OPENAI_TORRENT_RERANK_ENABLED !== "false",
+          openAiRerankEnabled: process.env.OPENAI_TORRENT_RERANK_ENABLED === "true",
         }),
     },
     {

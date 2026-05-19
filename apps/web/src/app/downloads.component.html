@@ -5,13 +5,6 @@
       <h1>Downloads</h1>
     </div>
     <div class="download-actions">
-      <a
-        class="history-button"
-        [routerLink]="modalRoute('downloads', 'history')"
-        queryParamsHandling="preserve"
-        aria-label="Open download history"
-        title="Download history"
-      >↺</a>
       @if (proxy(); as proxyStatus) {
         <div [class]="proxyToneClass(proxyStatus.status)">
           <strong>{{ proxyStatusLabel(proxyStatus.status) }}</strong>
@@ -20,11 +13,50 @@
           } @else {
             <span>Checker waiting</span>
           }
+          @if (proxyStatus.publicIp) {
+            <span>Local IP {{ proxyStatus.publicIp }}</span>
+          }
         </div>
       }
-      <button type="button" class="refresh-button" [disabled]="refreshing()" (click)="load(false)">
-        {{ refreshing() ? "Refreshing" : "Refresh" }}
-      </button>
+      <div class="download-action-buttons">
+        <a
+          class="download-icon-button"
+          [routerLink]="modalRoute('downloads', 'history')"
+          queryParamsHandling="preserve"
+          aria-label="Open download history"
+          title="Download history"
+        >
+          <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h11" />
+            <path d="M4 12h7" />
+            <path d="M4 18h6" />
+            <circle cx="16.5" cy="16.5" r="4" />
+            <path d="M16.5 14.5v2.2l1.5 1" />
+          </svg>
+        </a>
+        <div class="auto-refresh-toggle" role="radiogroup" aria-label="Download refresh mode">
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="autoRefresh()"
+            [class.is-active]="autoRefresh()"
+            (click)="setAutoRefresh(true)"
+          >
+            <span class="radio-dot" aria-hidden="true"></span>
+            Auto refresh
+          </button>
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="!autoRefresh()"
+            [class.is-active]="!autoRefresh()"
+            (click)="setAutoRefresh(false)"
+          >
+            <span class="radio-dot" aria-hidden="true"></span>
+            Paused
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 

@@ -14,7 +14,7 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "${RELEASE_DB_PORT:-5433}:5432"
+      - "127.0.0.1:${RELEASE_DB_PORT:-5433}:5432"
   releaseApi:
     image: node:22-alpine
     restart: unless-stopped
@@ -37,6 +37,7 @@ services:
       TRANSMISSION_RPC_PORT: "${TRANSMISSION_RPC_PORT:-9091}"
       TRANSMISSION_RPC_USERNAME: "${TRANSMISSION_RPC_USERNAME:-}"
       TRANSMISSION_RPC_PASSWORD: "${TRANSMISSION_RPC_PASSWORD:-}"
+      RELEASE_WEB_ORIGIN: "${RELEASE_WEB_ORIGIN:-http://localhost:4200}"
       PORT: 3001
       NPM_CONFIG_CACHE: /tmp/.npm-cache
     depends_on:
@@ -46,7 +47,7 @@ services:
       - .:/usr/src/app
     command: sh -c "npm install && npm run prisma:generate && npm run prisma:deploy && npm run start:dev"
     ports:
-      - "${RELEASE_API_PORT:-3001}:3001"
+      - "127.0.0.1:${RELEASE_API_PORT:-3001}:3001"
   releaseWeb:
     image: node:22-alpine
     restart: unless-stopped
@@ -61,9 +62,9 @@ services:
       - .:/usr/src/app
     command: sh -c "npm install && npm run start"
     ports:
-      - "${RELEASE_WEB_PORT:-4200}:4200"
+      - "127.0.0.1:${RELEASE_WEB_PORT:-4200}:4200"
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:latest
+    image: lscr.io/linuxserver/prowlarr@sha256:a89f252d6a22bd25af14a5380aec0adcc3c3af2e3282164f981680e6844070f3
     restart: unless-stopped
     environment:
       PUID: "${HOST_UID:-501}"
@@ -72,7 +73,7 @@ services:
     volumes:
       - prowlarr-config:/config
     ports:
-      - "${PROWLARR_PORT:-9696}:9696"
+      - "127.0.0.1:${PROWLARR_PORT:-9696}:9696"
   torrentHost:
     image: haugene/transmission-openvpn:5.4.1
     container_name: transmission
@@ -84,10 +85,18 @@ services:
       # legacy /data/transmission-home from the NFS-backed data volume.
       - trans-config:/config
       - .:/usr/src/app
-    env_file:
-      - .env
     environment:
+      OPENVPN_PROVIDER: "${OPENVPN_PROVIDER:-PIA}"
+      OPENVPN_CONFIG: "${OPENVPN_CONFIG:-US East}"
+      OPENVPN_USERNAME: "${OPENVPN_USERNAME:-}"
+      OPENVPN_PASSWORD: "${OPENVPN_PASSWORD:-}"
       OPENVPN_OPTS: "${OPENVPN_OPTS:-} --inactive 3600 --ping 10 --ping-exit 60"
+      WEBPROXY_ENABLED: "${WEBPROXY_ENABLED:-false}"
+      LOCAL_NETWORK: "${LOCAL_NETWORK:-192.168.0.0/16}"
+      PUID: "${HOST_UID:-501}"
+      PGID: "${HOST_GID:-20}"
+      TRANSMISSION_RPC_USERNAME: "${TRANSMISSION_RPC_USERNAME:-}"
+      TRANSMISSION_RPC_PASSWORD: "${TRANSMISSION_RPC_PASSWORD:-}"
     cap_add:
       - NET_ADMIN
     logging:
@@ -95,7 +104,7 @@ services:
       options:
         max-size: 10m
     ports:
-      - 9091:9091
+      - "127.0.0.1:${TRANSMISSION_WEB_PORT:-9091}:9091"
       # PIA assigns a dynamic forwarded peer port; verify it before publishing peer ports.
 volumes:
   release-db18:

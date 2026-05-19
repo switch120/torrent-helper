@@ -35,6 +35,8 @@ type TmdbClientConfig = {
   maxPages?: number;
   maxTvPages?: number;
   maxConcurrentRequests?: number;
+  retryDelayMs?: number;
+  maxRetries?: number;
   tvProviderGroups?: TmdbTvProviderGroup[];
 };
 
@@ -118,6 +120,11 @@ type DigitalMovie = {
   rawReleaseDates: TmdbReleaseDatesResponse;
 };
 
+type MovieProviderAvailability = {
+  streamingProviders: ReleaseProviderSource[];
+  hasDigitalAvailability: boolean;
+};
+
 type TmdbMovieReleaseDateSource = "digital" | "new-release-fallback";
 
 type TmdbMovieReleaseDateMatch = {
@@ -140,7 +147,7 @@ type TvShowDiscovery = {
 
 const digitalReleaseType = 4;
 const newReleaseFallbackTypes = [2, 3];
-const tmdbDigitalDatePolicy = "original-us-digital-with-streaming-providers-v1";
+const tmdbDigitalDatePolicy = "original-us-digital-with-provider-backed-fallback-v2";
 const featuredReleaseWindowDays = 548;
 const featuredVoteThreshold = 25;
 const featuredPopularityThreshold = 20;
@@ -166,6 +173,8 @@ export class TmdbClient {
   private readonly maxPages: number;
   private readonly maxTvPages: number;
   private readonly maxConcurrentRequests: number;
+  private readonly retryDelayMs: number;
+  private readonly maxRetries: number;
   private readonly tvProviderGroups: TmdbTvProviderGroup[];
 
   constructor(config: TmdbClientConfig = {}) {
@@ -177,6 +186,8 @@ export class TmdbClient {
     this.maxPages = config.maxPages || 5;
     this.maxTvPages = config.maxTvPages || 3;
     this.maxConcurrentRequests = config.maxConcurrentRequests || 6;
+    this.retryDelayMs = config.retryDelayMs ?? 1_000;
+    this.maxRetries = config.maxRetries ?? 2;
     this.tvProviderGroups = config.tvProviderGroups || defaultTvProviderGroups;
   }
 
@@ -214,13 +225,19 @@ export class TmdbClient {
       );
       if (!releaseDateMatch) continue;
 
-      const streamingProviders = await this.fetchMovieStreamingProviders(movie.id);
+      const providerAvailability = await this.fetchMovieProviderAvailability(movie.id);
+      if (
+        releaseDateMatch.source === "new-release-fallback" &&
+        !providerAvailability.hasDigitalAvailability
+      ) {
+        continue;
+      }
 
       digitalMovies.push({
         movie,
         releaseDate: releaseDateMatch.date,
         releaseDateSource: releaseDateMatch.source,
-        streamingProviders,
+        streamingProviders: providerAvailability.streamingProviders,
         rawReleaseDates,
       });
     }
@@ -398,11 +415,11 @@ export class TmdbClient {
     return this.fetchJson<TmdbReleaseDatesResponse>(this.url(`/3/movie/${movieId}/release_dates`));
   }
 
-  private async fetchMovieStreamingProviders(movieId: number): Promise<ReleaseProviderSource[]> {
+  private async fetchMovieProviderAvailability(movieId: number): Promise<MovieProviderAvailability> {
     const response = await this.fetchJson<TmdbWatchProvidersResponse>(
       this.url(`/3/movie/${movieId}/watch/providers`),
     );
-    return normalizeMovieStreamingProviders(response);
+    return normalizeMovieProviderAvailability(response);
   }
 
   getMovieDetail(movieId: number): Promise<TmdbMovieDetailResponse> {
@@ -431,15 +448,26 @@ export class TmdbClient {
   }
 
   private async fetchJson<T>(url: URL): Promise<T> {
-    const response = await this.fetchImpl(url.toString(), this.requestInit());
-    const raw = await response.json().catch(() => ({}));
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
+    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      const response = await this.fetchImpl(url.toString(), this.requestInit());
+      const raw = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        return raw as T;
+      }
+
       const statusMessage = response.statusText || "TMDB request failed";
-      throw new Error(`TMDB ${response.status}: ${statusMessage}`);
+      lastError = new Error(`TMDB ${response.status}: ${statusMessage}`);
+      if (!shouldRetryTmdbResponse(response.status) || attempt >= this.maxRetries) {
+        throw lastError;
+      }
+
+      await delay(retryDelayMs(response.headers, this.retryDelayMs));
     }
 
-    return raw as T;
+    throw lastError || new Error("TMDB request failed.");
   }
 
   private url(path: string): URL {
@@ -606,15 +634,33 @@ function uniqueTvAirings(airings: TvEpisodeAiring[]): TvEpisodeAiring[] {
   return [...byKey.values()];
 }
 
-function normalizeMovieStreamingProviders(response: TmdbWatchProvidersResponse): ReleaseProviderSource[] {
+function normalizeMovieProviderAvailability(response: TmdbWatchProvidersResponse): MovieProviderAvailability {
   const usProviders = response.results?.US;
-  if (!usProviders) return [];
+  if (!usProviders) {
+    return {
+      streamingProviders: [],
+      hasDigitalAvailability: false,
+    };
+  }
 
-  return uniqueProviderSources([
-    ...(usProviders.flatrate || []).map((provider) => providerSourceFromTmdbProvider(provider, "sub")),
-    ...(usProviders.free || []).map((provider) => providerSourceFromTmdbProvider(provider, "free")),
-    ...(usProviders.ads || []).map((provider) => providerSourceFromTmdbProvider(provider, "free")),
-  ]);
+  return {
+    streamingProviders: uniqueProviderSources([
+      ...(usProviders.flatrate || []).map((provider) => providerSourceFromTmdbProvider(provider, "sub")),
+      ...(usProviders.free || []).map((provider) => providerSourceFromTmdbProvider(provider, "free")),
+      ...(usProviders.ads || []).map((provider) => providerSourceFromTmdbProvider(provider, "free")),
+    ]),
+    hasDigitalAvailability: hasMovieDigitalAvailability(usProviders),
+  };
+}
+
+function hasMovieDigitalAvailability(usProviders: NonNullable<TmdbWatchProvidersResponse["results"]>["US"]): boolean {
+  return [
+    usProviders?.flatrate,
+    usProviders?.free,
+    usProviders?.ads,
+    usProviders?.rent,
+    usProviders?.buy,
+  ].some((providers) => Boolean(providers?.length));
 }
 
 function providerSourceFromTmdbProvider(
@@ -739,6 +785,28 @@ function isDateInWindow(value: string | null | undefined, weekStart: string, wee
   if (!value) return false;
   const dateOnly = value.slice(0, 10);
   return dateOnly >= weekStart && dateOnly <= weekEnd;
+}
+
+function shouldRetryTmdbResponse(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+function retryDelayMs(headers: Headers, fallbackDelayMs: number): number {
+  const retryAfter = headers.get("Retry-After");
+  if (!retryAfter) return fallbackDelayMs;
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1_000);
+
+  const retryAt = Date.parse(retryAfter);
+  if (!Number.isFinite(retryAt)) return fallbackDelayMs;
+
+  return Math.max(0, retryAt - Date.now());
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function findPrimaryReleaseDate(

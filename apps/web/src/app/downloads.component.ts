@@ -22,6 +22,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   readonly status = signal<"loading" | "ready" | "error">("loading");
   readonly error = signal<string | null>(null);
   readonly refreshing = signal(false);
+  readonly autoRefresh = signal(true);
   readonly formatBytes = formatBytes;
   readonly formatEta = formatEta;
   readonly formatPeers = formatPeers;
@@ -32,7 +33,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.load(true);
-    this.refreshTimer = setInterval(() => void this.load(false), 5000);
+    this.refreshTimer = setInterval(() => {
+      if (this.autoRefresh()) void this.load(false);
+    }, 5000);
   }
 
   ngOnDestroy(): void {
@@ -62,5 +65,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   progress(download: TransmissionDownload): number {
     return Math.round(download.percentDone * 100);
+  }
+
+  setAutoRefresh(enabled: boolean): void {
+    this.autoRefresh.set(enabled);
+    if (enabled) void this.load(false);
   }
 }

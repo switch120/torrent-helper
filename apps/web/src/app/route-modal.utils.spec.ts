@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closeModalRoute, modalRoute } from "./route-modal.utils";
+import { closeModalRoute, modalCloseRouteForUrl, modalRoute } from "./route-modal.utils";
 
 describe("route modal helpers", () => {
   it("builds named-outlet commands for slide-out modal routes", () => {
@@ -8,5 +8,9 @@ describe("route modal helpers", () => {
 
   it("builds commands that close the modal outlet without changing the primary route", () => {
     expect(closeModalRoute()).toEqual([{ outlets: { modal: null } }]);
+  });
+
+  it("returns to the downloads modal when closing download history", () => {
+    expect(modalCloseRouteForUrl("/(modal:downloads/history)")).toEqual(["/", { outlets: { modal: ["downloads"] } }]);
   });
 });

@@ -4,6 +4,7 @@
   "description": "Docker-first Transmission VPN and release hub utilities.",
   "scripts": {
     "diagnose": "bash scripts/diagnose-transmission.sh",
+    "vpn-checker:add": "bash scripts/add-vpn-checker.sh",
     "lint": "eslint \"apps/**/*.ts\"",
     "knip": "knip --include files,dependencies,unlisted --no-config-hints",
     "precommit:check": "npm run knip && npm run lint && git diff --check",

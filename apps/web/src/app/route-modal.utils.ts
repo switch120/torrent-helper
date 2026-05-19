@@ -7,3 +7,11 @@ export function modalRoute(...segments: string[]): ModalRouteCommand {
 export function closeModalRoute(): [{ outlets: { modal: null } }] {
   return [{ outlets: { modal: null } }];
 }
+
+export function modalCloseRouteForUrl(url: string): ModalRouteCommand | ReturnType<typeof closeModalRoute> {
+  if (url.includes("(modal:downloads/history")) {
+    return modalRoute("downloads");
+  }
+
+  return closeModalRoute();
+}

@@ -3,7 +3,7 @@ import { Component, HostListener, ViewEncapsulation, inject, signal } from "@ang
 import { AuthService } from "@auth0/auth0-angular";
 import { Router, RouterLink, RouterOutlet } from "@angular/router";
 import { googleLoginAuthorizationParams } from "./auth-routing.utils";
-import { closeModalRoute, modalRoute } from "./route-modal.utils";
+import { modalCloseRouteForUrl, modalRoute } from "./route-modal.utils";
 
 @Component({
   selector: "app-root",
@@ -18,7 +18,6 @@ export class AppComponent {
   private readonly router = inject(Router);
 
   readonly modalActive = signal(false);
-  readonly closeModalRoute = closeModalRoute;
   readonly modalRoute = modalRoute;
 
   login(): void {
@@ -45,7 +44,7 @@ export class AppComponent {
 
   closeModal(): void {
     if (!this.modalActive()) return;
-    void this.router.navigate(closeModalRoute(), { queryParamsHandling: "preserve" });
+    void this.router.navigate(modalCloseRouteForUrl(this.router.url), { queryParamsHandling: "preserve" });
   }
 
   @HostListener("document:keydown.escape")

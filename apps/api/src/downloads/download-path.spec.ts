@@ -10,6 +10,8 @@ describe("download directory validation", () => {
 
   it("rejects paths outside /data and traversal attempts", () => {
     expect(() => validateDownloadDir("/downloads")).toThrow("Download directory must start with /data");
+    expect(() => validateDownloadDir("/dataevil")).toThrow("Download directory must start with /data");
+    expect(() => validateDownloadDir("/database")).toThrow("Download directory must start with /data");
     expect(() => validateDownloadDir("/data/../config")).toThrow("Download directory cannot contain ..");
   });
 });

@@ -3,7 +3,7 @@ export const fixedDownloadDirs = [defaultDownloadDir, "/data/Movies/4k"] as cons
 
 export function validateDownloadDir(downloadDir: string): string {
   const trimmed = String(downloadDir || "").trim();
-  if (!trimmed.startsWith("/data")) {
+  if (trimmed !== "/data" && !trimmed.startsWith("/data/")) {
     throw new Error("Download directory must start with /data");
   }
   if (trimmed.includes("..")) {
