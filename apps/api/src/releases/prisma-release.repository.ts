@@ -179,6 +179,16 @@ export class PrismaReleaseRepository implements ReleaseRepository {
     });
 
     if (!cache) return null;
+    const missingLanguageCount = await this.prisma.tmdbDigitalMovie.count({
+      where: {
+        releaseDate: {
+          gte: cache.weekStart,
+          lte: cache.weekEnd,
+        },
+        originalLanguage: null,
+      },
+    });
+    if (missingLanguageCount > 0) return null;
 
     return {
       weekStart: toDateOnly(cache.weekStart),
@@ -228,6 +238,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         voteCount: movie.voteCount,
         voteAverage: movie.voteAverage,
         isFeaturedDigital: movie.isFeaturedDigital,
+        originalLanguage: movie.originalLanguage,
+        isInternational: movie.isInternational,
+        isDubbed: movie.isDubbed,
       };
     });
   }
@@ -278,6 +291,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
             voteAverage: release.voteAverage,
             voteCount: release.voteCount,
             isFeaturedDigital: Boolean(release.isFeaturedDigital),
+            originalLanguage: release.originalLanguage,
+            isInternational: release.isInternational === true,
+            isDubbed: release.isDubbed === true,
             raw: release as Prisma.InputJsonValue,
           },
           update: {
@@ -290,6 +306,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
             voteAverage: release.voteAverage,
             voteCount: release.voteCount,
             isFeaturedDigital: Boolean(release.isFeaturedDigital),
+            originalLanguage: release.originalLanguage,
+            isInternational: release.isInternational === true,
+            isDubbed: release.isDubbed === true,
             raw: release as Prisma.InputJsonValue,
           },
         });
@@ -305,6 +324,16 @@ export class PrismaReleaseRepository implements ReleaseRepository {
     });
 
     if (!cache) return null;
+    const missingLanguageCount = await this.prisma.tmdbTvAiring.count({
+      where: {
+        releaseDate: {
+          gte: cache.weekStart,
+          lte: cache.weekEnd,
+        },
+        originalLanguage: null,
+      },
+    });
+    if (missingLanguageCount > 0) return null;
 
     return {
       weekStart: toDateOnly(cache.weekStart),
@@ -384,6 +413,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
             popularity: release.popularity,
             voteAverage: release.voteAverage,
             voteCount: release.voteCount,
+            originalLanguage: release.originalLanguage,
+            isInternational: release.isInternational === true,
+            isDubbed: release.isDubbed === true,
             raw: release as Prisma.InputJsonValue,
           },
           update: {
@@ -402,6 +434,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
             popularity: release.popularity,
             voteAverage: release.voteAverage,
             voteCount: release.voteCount,
+            originalLanguage: release.originalLanguage,
+            isInternational: release.isInternational === true,
+            isDubbed: release.isDubbed === true,
             raw: release as Prisma.InputJsonValue,
           },
         });
@@ -449,6 +484,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
       voteAverage: movie.voteAverage,
       voteCount: movie.voteCount,
       isFeaturedDigital: movie.isFeaturedDigital,
+      originalLanguage: movie.originalLanguage,
+      isInternational: movie.isInternational,
+      isDubbed: movie.isDubbed,
     };
   }
 
@@ -530,22 +568,69 @@ export class PrismaReleaseRepository implements ReleaseRepository {
   }
 
   async saveDownloadRecord(input: {
+    userId: number;
     releaseEventId: string;
+    tmdbId: number | null;
+    title: string;
     transmissionTorrentId: number | null;
     torrentName: string;
     magnetLink: string;
     magnetHash: string | null;
     downloadDir: string;
+    status: DownloadRecordSnapshot["status"];
   }): Promise<DownloadRecordSnapshot> {
     const record = await this.prisma.downloadRecord.create({ data: input });
     return mapDownloadRecord(record);
   }
 
-  async getDownloadRecords(): Promise<DownloadRecordSnapshot[]> {
+  async getDownloadRecords(userId?: number): Promise<DownloadRecordSnapshot[]> {
     const records = await this.prisma.downloadRecord.findMany({
+      where: typeof userId === "number" ? { userId } : undefined,
       orderBy: { updatedAt: "desc" },
     });
     return records.map(mapDownloadRecord);
+  }
+
+  async findDownloadRecordByMagnet(
+    userId: number,
+    magnetLink: string,
+    magnetHash: string | null,
+  ): Promise<DownloadRecordSnapshot | null> {
+    const record = await this.prisma.downloadRecord.findFirst({
+      where: {
+        userId,
+        OR: [
+          ...(magnetHash ? [{ magnetHash }] : []),
+          { magnetLink },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    return record ? mapDownloadRecord(record) : null;
+  }
+
+  async markDownloadRecordsCompleted(
+    transmissionTorrentId: number,
+    completedAt: Date,
+  ): Promise<number> {
+    const result = await this.prisma.downloadRecord.updateMany({
+      where: {
+        transmissionTorrentId,
+        status: { not: "completed" },
+      },
+      data: {
+        status: "completed",
+        completedAt,
+      },
+    });
+    return result.count;
+  }
+
+  async deleteDownloadRecord(userId: number, id: number): Promise<boolean> {
+    const result = await this.prisma.downloadRecord.deleteMany({
+      where: { id, userId },
+    });
+    return result.count > 0;
   }
 }
 
@@ -609,6 +694,9 @@ function mapReleaseEvent(event: {
     sourceType: typeof raw.sourceType === "string" ? normalizeSourceType(raw.sourceType) : "unknown",
     seasonNumber: event.seasonNumber,
     isOriginal: event.isOriginal,
+    originalLanguage: typeof raw.originalLanguage === "string" ? raw.originalLanguage : null,
+    isInternational: raw.isInternational === true,
+    isDubbed: raw.isDubbed === true,
   };
 }
 
@@ -629,6 +717,9 @@ function mapTmdbTvAiring(airing: {
   popularity: number | null;
   voteAverage: number | null;
   voteCount: number | null;
+  originalLanguage: string | null;
+  isInternational: boolean;
+  isDubbed: boolean;
   raw: unknown;
 }): NormalizedRelease {
   return {
@@ -655,6 +746,9 @@ function mapTmdbTvAiring(airing: {
     popularity: airing.popularity,
     voteAverage: airing.voteAverage,
     voteCount: airing.voteCount,
+    originalLanguage: airing.originalLanguage,
+    isInternational: airing.isInternational,
+    isDubbed: airing.isDubbed,
   };
 }
 
@@ -664,20 +758,39 @@ function torrentCacheKey(eventId: string, quality: TorrentSearchQuality): string
 
 function mapDownloadRecord(record: {
   id: number;
+  userId: number | null;
   releaseEventId: string;
+  tmdbId: number | null;
+  title: string | null;
   transmissionTorrentId: number | null;
   torrentName: string;
   magnetLink: string;
   magnetHash: string | null;
   downloadDir: string;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
 }): DownloadRecordSnapshot {
   return {
     id: record.id,
+    userId: record.userId,
     releaseEventId: record.releaseEventId,
+    tmdbId: record.tmdbId,
+    title: record.title,
     transmissionTorrentId: record.transmissionTorrentId,
     torrentName: record.torrentName,
     magnetLink: record.magnetLink,
     magnetHash: record.magnetHash,
     downloadDir: record.downloadDir,
+    status: normalizeDownloadStatus(record.status),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    completedAt: record.completedAt,
   };
+}
+
+function normalizeDownloadStatus(status: string): DownloadRecordSnapshot["status"] {
+  if (status === "downloaded" || status === "completed" || status === "canceled") return status;
+  return "pending";
 }

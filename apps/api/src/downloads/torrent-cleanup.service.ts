@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
-import { TRANSMISSION_CLIENT } from "../releases/release.tokens";
+import { RELEASE_REPOSITORY, TRANSMISSION_CLIENT } from "../releases/release.tokens";
+import type { ReleaseRepository } from "../releases/release.repository";
 import type { TransmissionRpcClient } from "./transmission-rpc.client";
 
 const COMPLETED_TRANSMISSION_STATUS = 6;
@@ -13,6 +14,8 @@ export class TorrentCleanupService {
   constructor(
     @Inject(TRANSMISSION_CLIENT)
     private readonly transmission: Pick<TransmissionRpcClient, "getDownloads" | "removeTorrent">,
+    @Inject(RELEASE_REPOSITORY)
+    private readonly repository: Pick<ReleaseRepository, "markDownloadRecordsCompleted">,
   ) {}
 
   @Cron("*/30 * * * * *")
@@ -26,6 +29,7 @@ export class TorrentCleanupService {
         if (download.rawStatus !== COMPLETED_TRANSMISSION_STATUS) continue;
 
         this.logger.log(`Cleaning completed torrent: ${download.id}`);
+        await this.repository.markDownloadRecordsCompleted(download.id, new Date());
         await this.transmission.removeTorrent(download.id);
       }
     } catch (error) {

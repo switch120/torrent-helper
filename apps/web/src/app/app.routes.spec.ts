@@ -9,6 +9,14 @@ describe("app routes", () => {
     expect(routes.some((route) => route.path === "release/:eventId" && !route.outlet)).toBe(true);
     expect(routes.some((route) => route.path === "downloads" && !route.outlet)).toBe(true);
     expect(routes.some((route) => route.path === "favorites" && !route.outlet)).toBe(true);
-    expect(modalRoutes).toEqual(["release/:eventId", "downloads", "favorites"]);
+    expect(modalRoutes).toEqual([
+      "release/:eventId",
+      "downloads",
+      "downloads/history",
+      "favorites",
+      "settings",
+      "settings/providers",
+      "settings/hidden-shows",
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 import type { NormalizedRelease } from "./release.types";
+import { hasDubbedCue, isInternationalLanguage, normalizeOriginalLanguage } from "./release-language";
 import type {
   TmdbMovieDetailResponse,
   TmdbNetwork,
@@ -54,6 +55,7 @@ type TmdbMovieSummary = {
   title: string;
   original_title?: string | null;
   overview?: string | null;
+  original_language?: string | null;
   poster_path?: string | null;
   release_date?: string | null;
   popularity?: number | null;
@@ -66,6 +68,7 @@ type TmdbTvSummary = {
   name?: string | null;
   original_name?: string | null;
   overview?: string | null;
+  original_language?: string | null;
   poster_path?: string | null;
   first_air_date?: string | null;
   popularity?: number | null;
@@ -400,6 +403,7 @@ export class TmdbClient {
       item.movie.release_date || null,
       item.releaseDate,
     );
+    const originalLanguage = normalizeOriginalLanguage(item.movie.original_language);
 
     return {
       eventId: `tmdb:digital:${item.movie.id}:${item.releaseDate}`,
@@ -429,6 +433,9 @@ export class TmdbClient {
         item.movie.vote_count ?? null,
         item.releaseDate,
       ),
+      originalLanguage,
+      isInternational: isInternationalLanguage(originalLanguage),
+      isDubbed: hasDubbedCue(item.movie.title, item.movie.original_title, item.movie.overview),
     };
   }
 
@@ -440,6 +447,7 @@ export class TmdbClient {
     const seasonNumber = item.episode.season_number ?? item.season.season_number ?? null;
     const episodeNumber = item.episode.episode_number ?? null;
     const source = tvSourceFromNetworks(item.detail.networks);
+    const originalLanguage = normalizeOriginalLanguage(item.detail.original_language || item.show.original_language);
 
     return {
       eventId: [
@@ -472,6 +480,17 @@ export class TmdbClient {
       popularity: item.show.popularity ?? null,
       voteAverage: item.show.vote_average ?? null,
       voteCount: item.show.vote_count ?? null,
+      originalLanguage,
+      isInternational: isInternationalLanguage(originalLanguage),
+      isDubbed: hasDubbedCue(
+        item.show.name,
+        item.show.original_name,
+        item.show.overview,
+        item.detail.name,
+        item.detail.original_name,
+        item.detail.overview,
+        item.episode.name,
+      ),
     };
   }
 }

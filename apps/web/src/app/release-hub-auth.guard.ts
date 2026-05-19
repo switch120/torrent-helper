@@ -3,6 +3,7 @@ import { AuthService } from "@auth0/auth0-angular";
 import { CanActivateFn, Router } from "@angular/router";
 import { combineLatest, firstValueFrom } from "rxjs";
 import { filter, take } from "rxjs/operators";
+import { googleLoginAuthorizationParams, isForbiddenAuthError, isUnauthorizedAuthError } from "./auth-routing.utils";
 import { ReleaseApiClient } from "./release-api.client";
 
 export const releaseHubAuthGuard: CanActivateFn = async (_route, state) => {
@@ -21,7 +22,7 @@ export const releaseHubAuthGuard: CanActivateFn = async (_route, state) => {
     await firstValueFrom(
       auth.loginWithRedirect({
         appState: { target: state.url },
-        authorizationParams: { connection: "google-oauth2" },
+        authorizationParams: googleLoginAuthorizationParams,
       }),
     );
     return false;
@@ -30,7 +31,21 @@ export const releaseHubAuthGuard: CanActivateFn = async (_route, state) => {
   try {
     await api.getProfile();
     return true;
-  } catch {
-    return router.createUrlTree(["/access-denied"]);
+  } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      await firstValueFrom(
+        auth.loginWithRedirect({
+          appState: { target: state.url },
+          authorizationParams: googleLoginAuthorizationParams,
+        }),
+      );
+      return false;
+    }
+
+    if (isForbiddenAuthError(error)) {
+      return router.createUrlTree(["/access-denied"]);
+    }
+
+    return false;
   }
 };

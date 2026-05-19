@@ -1,5 +1,6 @@
 import type { NormalizedRelease } from "./release.types";
 import type { ReleaseCastMember, ReleaseDetail } from "./release-detail.types";
+import { hasDubbedCue, isInternationalLanguage, normalizeOriginalLanguage } from "./release-language";
 
 type TmdbGenre = { id?: number; name?: string | null };
 export type TmdbNetwork = { id?: number; name?: string | null };
@@ -32,6 +33,7 @@ export type TmdbMovieDetailResponse = {
   title?: string | null;
   original_title?: string | null;
   overview?: string | null;
+  original_language?: string | null;
   backdrop_path?: string | null;
   poster_path?: string | null;
   release_date?: string | null;
@@ -46,6 +48,7 @@ export type TmdbTvDetailResponse = {
   name?: string | null;
   original_name?: string | null;
   overview?: string | null;
+  original_language?: string | null;
   backdrop_path?: string | null;
   poster_path?: string | null;
   first_air_date?: string | null;
@@ -80,6 +83,7 @@ export function mapTmdbMovieDetail(
   release: NormalizedRelease,
   raw: TmdbMovieDetailResponse,
 ): ReleaseDetail {
+  const originalLanguage = normalizeOriginalLanguage(raw.original_language || release.originalLanguage);
   return {
     eventId: release.eventId,
     release,
@@ -97,6 +101,9 @@ export function mapTmdbMovieDetail(
     cast: mapCast(raw.credits?.cast),
     imdbId: raw.external_ids?.imdb_id || release.imdbId,
     tmdbId: raw.id || release.tmdbId,
+    originalLanguage,
+    isInternational: isInternationalLanguage(originalLanguage),
+    isDubbed: release.isDubbed === true || hasDubbedCue(raw.title, raw.original_title, raw.overview, release.title),
     raw,
   };
 }
@@ -106,6 +113,7 @@ export function mapTmdbTvDetail(
   raw: TmdbTvDetailResponse,
   season: TmdbSeasonDetailResponse | null = null,
 ): ReleaseDetail {
+  const originalLanguage = normalizeOriginalLanguage(raw.original_language || release.originalLanguage);
   return {
     eventId: release.eventId,
     release,
@@ -123,6 +131,9 @@ export function mapTmdbTvDetail(
     cast: mapCast(raw.aggregate_credits?.cast),
     imdbId: raw.external_ids?.imdb_id || release.imdbId,
     tmdbId: raw.id || release.tmdbId,
+    originalLanguage,
+    isInternational: isInternationalLanguage(originalLanguage),
+    isDubbed: release.isDubbed === true || hasDubbedCue(raw.name, raw.original_name, raw.overview, season?.overview, release.title),
     raw: { detail: raw, season },
   };
 }

@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { CurrentUser } from "../auth/current-user.decorator";
+import type { AuthenticatedAppUser } from "../auth/auth.types";
 import { ReleasesService } from "./releases.service";
 import { ReleaseWorkflowService } from "./release-workflow.service";
 
@@ -34,9 +36,10 @@ export class ReleasesController {
 
   @Post(":eventId/downloads")
   addDownload(
+    @CurrentUser() user: AuthenticatedAppUser,
     @Param("eventId") eventId: string,
     @Body() body: { magnetLink?: string; downloadDir?: string },
   ) {
-    return this.workflowService.addDownload(eventId, body);
+    return this.workflowService.addDownload(user.id, eventId, body);
   }
 }

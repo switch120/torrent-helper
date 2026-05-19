@@ -3,8 +3,8 @@ import { Component, OnInit, inject } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import { ReleaseWeekStore } from "./release-week.store";
-import { addWeeks, formatTmdbRating, normalizeWeekStartParam, ratingToneClass, releaseKey, releaseSources, showKey, startOfIsoWeek } from "./release-week.utils";
-import type { DigitalRelease, ReleaseProviderSource } from "./release.models";
+import { addWeeks, canHideShow, formatTmdbRating, normalizeWeekStartParam, ratingToneClass, releaseKey, releaseSources, showKey, startOfIsoWeek } from "./release-week.utils";
+import type { DigitalRelease } from "./release.models";
 import { modalRoute } from "./route-modal.utils";
 
 @Component({
@@ -50,14 +50,19 @@ export class WeekBrowserComponent implements OnInit {
     return Boolean(key && this.store.favoriteShowKeySet().has(key));
   }
 
+  canHide(release: DigitalRelease): boolean {
+    return canHideShow(release, this.store.favoriteShowKeySet());
+  }
+
   addFavorite(event: Event, release: DigitalRelease): void {
     this.stop(event);
     void this.store.addFavorite(release);
   }
 
-  hideProvider(event: Event, source: ReleaseProviderSource): void {
+  hideShow(event: Event, release: DigitalRelease): void {
     this.stop(event);
-    this.store.hideProviderKey(source.key, source.name);
+    if (!this.canHide(release)) return;
+    this.store.hideShow(release);
   }
 
   private async loadAndRememberWeek(weekStart: string): Promise<void> {

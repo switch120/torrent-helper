@@ -74,6 +74,9 @@ model TmdbDigitalMovie {
   voteAverage          Float?
   voteCount            Int?
   isFeaturedDigital    Boolean  @default(false)
+  originalLanguage     String?
+  isInternational      Boolean  @default(false)
+  isDubbed             Boolean  @default(false)
   raw                  Json
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -113,6 +116,9 @@ model TmdbTvAiring {
   popularity       Float?
   voteAverage      Float?
   voteCount        Int?
+  originalLanguage String?
+  isInternational  Boolean  @default(false)
+  isDubbed         Boolean  @default(false)
   raw              Json
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -171,18 +177,26 @@ model TorrentSearchCache {
 
 model DownloadRecord {
   id                    Int      @id @default(autoincrement())
+  userId                Int?
   releaseEventId        String
+  tmdbId                Int?
+  title                 String?
   transmissionTorrentId Int?
   torrentName           String
   magnetLink            String
   magnetHash            String?
   downloadDir           String
+  status                String   @default("pending")
+  completedAt           DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+  user                  AppUser? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@index([releaseEventId])
   @@index([transmissionTorrentId])
   @@index([magnetHash])
+  @@index([status])
 }
 
 model AppUser {
@@ -195,13 +209,17 @@ model AppUser {
   updatedAt DateTime       @updatedAt
   settings  UserSettings?
   favorites FavoriteShow[]
+  downloads DownloadRecord[]
 }
 
 model UserSettings {
   userId            Int      @id
   hiddenProviders   Json?
+  selectedProviders Json?
   hiddenShowKeys    Json?
   showOnlyFavorites Boolean  @default(false)
+  showInternational Boolean  @default(false)
+  showDubbed        Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   user              AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)

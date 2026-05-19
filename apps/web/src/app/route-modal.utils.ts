@@ -1,9 +1,9 @@
-export type ModalRouteCommand = [{ outlets: { modal: string[] | null } }];
+export type ModalRouteCommand = ["/", { outlets: { modal: string[] | null } }];
 
 export function modalRoute(...segments: string[]): ModalRouteCommand {
-  return [{ outlets: { modal: segments } }];
+  return ["/", { outlets: { modal: segments } }];
 }
 
-export function closeModalRoute(): ModalRouteCommand {
+export function closeModalRoute(): [{ outlets: { modal: null } }] {
   return [{ outlets: { modal: null } }];
 }

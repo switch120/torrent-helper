@@ -1,11 +1,40 @@
 import type {
   DigitalRelease,
+  HiddenShowFilter,
   ProviderFilter,
   ReleaseProviderSource,
   ReleaseSection,
   ReleaseWeekResponse,
   ReleaseWeekStatus,
 } from "./release.models";
+
+type TvFilterOptions = {
+  hiddenShowKeys?: Set<string>;
+  showOnlyFavorites?: boolean;
+  favoriteShowKeys?: Set<string>;
+  showInternational?: boolean;
+  showDubbed?: boolean;
+};
+
+export const DEFAULT_SELECTED_PROVIDER_NAMES = [
+  "Apple TV+",
+  "Netflix",
+  "Max",
+  "Disney+",
+  "Hulu",
+  "Prime",
+  "Paramount+",
+  "Peacock",
+  "HBO",
+  "STARZ",
+];
+
+export const DEFAULT_SELECTED_PROVIDERS: ProviderFilter[] = DEFAULT_SELECTED_PROVIDER_NAMES.map((name) => ({
+  key: providerKeyFromName(name),
+  name,
+  hidden: false,
+  selected: true,
+}));
 
 export function startOfIsoWeek(value = new Date()): string {
   const date = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
@@ -56,18 +85,13 @@ export function formatWeekRange(weekStart: string, weekEnd: string): string {
 
 export function buildReleaseSections(
   response: ReleaseWeekResponse | null,
-  hiddenProviderKeys = new Set<string>(),
+  selectedProviderKeys: Set<string> | null = null,
   hiddenShowKeys = new Set<string>(),
-  focusedProviderKey: string | null = null,
-  favoriteOptions: {
-    showOnlyFavorites?: boolean;
-    favoriteShowKeys?: Set<string>;
-  } = {},
+  favoriteOptions: TvFilterOptions = {},
 ): ReleaseSection[] {
-  const movies = filterProviderScope(response?.movies ?? [], hiddenProviderKeys, focusedProviderKey);
-  const tvWithProviders = groupTvReleases(
-    filterProviderScope(response?.tv ?? [], hiddenProviderKeys, focusedProviderKey),
-  );
+  const movies = filterLanguageVisibility(response?.movies ?? [], favoriteOptions);
+  const tvRows = filterLanguageVisibility(groupTvReleases(response?.tv ?? []), favoriteOptions);
+  const tvWithProviders = filterSelectedProviders(tvRows, selectedProviderKeys);
   const tvWithoutHiddenShows = filterHiddenShows(tvWithProviders, hiddenShowKeys);
   const tv = filterFavoriteShows(
     tvWithoutHiddenShows,
@@ -86,7 +110,7 @@ export function buildReleaseSections(
     {
       title: "TV",
       count: tv.length,
-      hiddenCount: tvWithProviders.length - tv.length,
+      hiddenCount: tvWithProviders.length - tvWithoutHiddenShows.length,
       emptyText: "No TV releases cached for this week.",
       releases: tv,
     },
@@ -101,7 +125,7 @@ export function providerKey(release: Pick<DigitalRelease, "releaseSource" | "sou
 }
 
 export function providerKeyFromName(value: string): string {
-  const slug = providerSlug(value);
+  const slug = providerSlug(canonicalProviderName(value));
   return `provider:${slug || "unknown"}`;
 }
 
@@ -110,7 +134,7 @@ export function providerDisplayName(value: string): string {
 }
 
 export function releaseSources(release: DigitalRelease): ReleaseProviderSource[] {
-  if (release.sources?.length) return release.sources;
+  if (release.sources?.length) return release.sources.map(normalizeProviderSource);
   return [providerSourceFromRelease(release)];
 }
 
@@ -125,13 +149,21 @@ export function isProviderFilterable(release: DigitalRelease): boolean {
   return release.releaseKind !== "digital";
 }
 
+export function canHideShow(
+  release: Pick<DigitalRelease, "mediaType" | "tmdbId" | "watchmodeId" | "title">,
+  favoriteShowKeys: Set<string>,
+): boolean {
+  const key = showKey(release);
+  return Boolean(key && !favoriteShowKeys.has(key));
+}
+
 export function collectProviderFilters(
   response: ReleaseWeekResponse | null,
-  hiddenProviderKeys: Set<string>,
+  selectedProviderKeys: Set<string>,
   knownProviders: ProviderFilter[] = [],
+  filterOptions: TvFilterOptions = {},
 ): ProviderFilter[] {
   const providers = new Map<string, ProviderFilter>();
-  const normalizedHiddenProviderKeys = normalizeHiddenProviderKeys(hiddenProviderKeys, knownProviders);
   const counts = new Map<string, number>();
 
   for (const provider of knownProviders) {
@@ -139,28 +171,39 @@ export function collectProviderFilters(
     providers.set(key, {
       key,
       name: canonicalProviderName(provider.name),
-      hidden: provider.hidden || normalizedHiddenProviderKeys.has(key),
+      hidden: false,
+      selected: selectedProviderKeys.has(key),
       count: 0,
       disabled: true,
     });
   }
 
-  for (const release of [...(response?.movies ?? []), ...(response?.tv ?? [])]) {
+  const groupedTvRows = filterLanguageVisibility(groupTvReleases(response?.tv ?? []), filterOptions);
+  for (const release of groupedTvRows) {
     if (!isProviderFilterable(release)) continue;
     for (const source of releaseSources(release)) {
-      providers.set(source.key, {
-        key: source.key,
-        name: source.name,
-        hidden: normalizedHiddenProviderKeys.has(source.key),
+      const key = providerKeyFromName(source.name);
+      providers.set(key, {
+        key,
+        name: canonicalProviderName(source.name),
+        hidden: false,
+        selected: selectedProviderKeys.has(key),
         count: 0,
         disabled: true,
       });
     }
   }
 
-  for (const release of groupTvReleases(response?.tv ?? [])) {
+  const countableTvRows = filterFavoriteShows(
+    filterHiddenShows(groupedTvRows, filterOptions.hiddenShowKeys ?? new Set()),
+    filterOptions.showOnlyFavorites === true,
+    filterOptions.favoriteShowKeys ?? new Set(),
+  );
+
+  for (const release of countableTvRows) {
     for (const source of releaseSources(release)) {
-      counts.set(source.key, (counts.get(source.key) ?? 0) + 1);
+      const key = providerKeyFromName(source.name);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
 
@@ -169,7 +212,8 @@ export function collectProviderFilters(
       const count = counts.get(provider.key) ?? 0;
       return {
         ...provider,
-        hidden: normalizedHiddenProviderKeys.has(provider.key) || provider.hidden,
+        hidden: false,
+        selected: selectedProviderKeys.has(provider.key),
         count,
         disabled: count === 0,
       };
@@ -177,27 +221,39 @@ export function collectProviderFilters(
     .sort((a, b) => Number(a.disabled) - Number(b.disabled) || a.name.localeCompare(b.name));
 }
 
-function filterHiddenProviders(
+export function collectHiddenShowFilters(
+  response: ReleaseWeekResponse | null,
+  hiddenShowKeys: Set<string>,
+): HiddenShowFilter[] {
+  return groupTvReleases(response?.tv ?? [])
+    .filter((release) => hiddenShowKeys.has(showKey(release)))
+    .map((release) => ({
+      key: showKey(release),
+      title: release.title,
+      posterUrl: release.posterUrl,
+      releaseDate: release.releaseDate,
+      seasonNumber: release.seasonNumber,
+      episodeNumber: release.episodeNumber,
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title) || a.releaseDate.localeCompare(b.releaseDate));
+}
+
+export function collectAddableProviderFilters(providers: ProviderFilter[]): ProviderFilter[] {
+  return providers
+    .filter((provider) => provider.selected !== true)
+    .sort((a, b) => Number(a.disabled) - Number(b.disabled) || a.name.localeCompare(b.name));
+}
+
+function filterSelectedProviders(
   releases: DigitalRelease[],
-  hiddenProviderKeys: Set<string>,
+  selectedProviderKeys: Set<string> | null,
 ): DigitalRelease[] {
+  if (selectedProviderKeys === null) return releases;
   return releases.filter(
     (release) =>
       !isProviderFilterable(release) ||
-      releaseSources(release).some((source) => !hiddenProviderKeys.has(source.key)),
+      releaseSources(release).some((source) => selectedProviderKeys.has(providerKeyFromName(source.name))),
   );
-}
-
-function filterProviderScope(
-  releases: DigitalRelease[],
-  hiddenProviderKeys: Set<string>,
-  focusedProviderKey: string | null,
-): DigitalRelease[] {
-  if (focusedProviderKey) {
-    return releases.filter((release) => releaseSources(release).some((source) => source.key === focusedProviderKey));
-  }
-
-  return filterHiddenProviders(releases, hiddenProviderKeys);
 }
 
 function filterHiddenShows(
@@ -216,6 +272,17 @@ function filterFavoriteShows(
   return releases.filter((release) => favoriteShowKeys.has(showKey(release)));
 }
 
+function filterLanguageVisibility(
+  releases: DigitalRelease[],
+  options: Pick<TvFilterOptions, "showInternational" | "showDubbed">,
+): DigitalRelease[] {
+  return releases.filter((release) => {
+    if (release.isInternational === true && options.showInternational !== true) return false;
+    if (release.isDubbed === true && options.showDubbed !== true) return false;
+    return true;
+  });
+}
+
 function groupTvReleases(releases: DigitalRelease[]): DigitalRelease[] {
   const groups = new Map<string, DigitalRelease[]>();
 
@@ -230,7 +297,6 @@ function groupTvReleases(releases: DigitalRelease[]): DigitalRelease[] {
 function tvGroupKey(release: DigitalRelease): string {
   return [
     normalizeTitle(release.title) || showKey(release),
-    release.releaseDate,
     release.seasonNumber ?? "none",
   ].join(":");
 }
@@ -261,7 +327,10 @@ function compareTvRepresentative(a: DigitalRelease, b: DigitalRelease): number {
 
 function uniqueProviderSources(sources: ReleaseProviderSource[]): ReleaseProviderSource[] {
   const byKey = new Map<string, ReleaseProviderSource>();
-  for (const source of sources) byKey.set(source.key, source);
+  for (const source of sources) {
+    const normalized = normalizeProviderSource(source);
+    byKey.set(normalized.key, normalized);
+  }
   return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -275,37 +344,33 @@ function providerSourceFromRelease(release: DigitalRelease): ReleaseProviderSour
   };
 }
 
-function normalizeHiddenProviderKeys(
-  hiddenProviderKeys: Set<string>,
-  knownProviders: ProviderFilter[],
-): Set<string> {
-  const normalized = new Set(hiddenProviderKeys);
-
-  for (const provider of knownProviders) {
-    if (provider.hidden || hiddenProviderKeys.has(provider.key)) {
-      normalized.add(providerKeyFromName(provider.name));
-    }
-  }
-
-  return normalized;
+function normalizeProviderSource(source: ReleaseProviderSource): ReleaseProviderSource {
+  return {
+    ...source,
+    key: providerKeyFromName(source.name),
+    name: canonicalProviderName(source.name),
+  };
 }
 
 function canonicalProviderName(value: string): string {
   const trimmed = value.trim();
   const slug = providerSlug(trimmed);
   const aliases: Record<string, string> = {
-    amazonprimevideo: "Prime Video",
+    amazonprime: "Prime",
+    amazonprimevideo: "Prime",
     appletv: "Apple TV+",
     appletvplus: "Apple TV+",
     disney: "Disney+",
     disneyplus: "Disney+",
     fox: "FOX",
     fx: "FX",
-    hbomax: "MAX",
-    max: "MAX",
-    paramountplus: "Paramount Plus",
+    hbomax: "Max",
+    max: "Max",
+    paramount: "Paramount+",
+    paramountplus: "Paramount+",
     peacock: "Peacock",
-    primevideo: "Prime Video",
+    prime: "Prime",
+    primevideo: "Prime",
     roku: "The Roku Channel",
     starz: "STARZ",
     therokuchannel: "The Roku Channel",

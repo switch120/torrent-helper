@@ -2,6 +2,7 @@ import { CommonModule } from "@angular/common";
 import { Component, HostListener, ViewEncapsulation, inject, signal } from "@angular/core";
 import { AuthService } from "@auth0/auth0-angular";
 import { Router, RouterLink, RouterOutlet } from "@angular/router";
+import { googleLoginAuthorizationParams } from "./auth-routing.utils";
 import { closeModalRoute, modalRoute } from "./route-modal.utils";
 
 @Component({
@@ -22,9 +23,7 @@ export class AppComponent {
 
   login(): void {
     this.auth.loginWithRedirect({
-      authorizationParams: {
-        connection: "google-oauth2",
-      },
+      authorizationParams: googleLoginAuthorizationParams,
     }).subscribe();
   }
 

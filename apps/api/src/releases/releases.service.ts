@@ -146,7 +146,7 @@ export class ReleasesService {
     if (!this.tmdb.isConfigured()) return null;
 
     const cache = await this.repository.getTmdbDigitalWeekCache(window.weekStart);
-    const decision = getCacheDecision({
+    const decision = getRefreshDecision({
       weekStart: window.weekStart,
       now,
       cache,
@@ -155,24 +155,36 @@ export class ReleasesService {
 
     if (!decision.shouldFetch) return null;
 
-    try {
-      const result = await this.tmdb.getDigitalMovieReleases({
+    return this.queueRefresh(async () => {
+      const latestCache = await this.repository.getTmdbDigitalWeekCache(window.weekStart);
+      const latestDecision = getRefreshDecision({
         weekStart: window.weekStart,
-        weekEnd: window.weekEnd,
+        now,
+        cache: latestCache,
+        forceRefresh,
       });
 
-      await this.repository.saveTmdbDigitalWeek({
-        weekStart: window.weekStart,
-        weekEnd: window.weekEnd,
-        fetchedAt: now,
-        expiresAt: getNextExpiry(window.weekStart, now),
-        releases: result.releases,
-        raw: result.raw,
-      });
-      return null;
-    } catch (error) {
-      return error instanceof Error ? error.message : "TMDB digital movie refresh failed.";
-    }
+      if (!latestDecision.shouldFetch) return null;
+
+      try {
+        const result = await this.tmdb.getDigitalMovieReleases({
+          weekStart: window.weekStart,
+          weekEnd: window.weekEnd,
+        });
+
+        await this.repository.saveTmdbDigitalWeek({
+          weekStart: window.weekStart,
+          weekEnd: window.weekEnd,
+          fetchedAt: now,
+          expiresAt: getNextExpiry(window.weekStart, now),
+          releases: result.releases,
+          raw: result.raw,
+        });
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : "TMDB digital movie refresh failed.";
+      }
+    });
   }
 
   private async ensureTmdbTvAirings(
@@ -183,7 +195,7 @@ export class ReleasesService {
     if (!this.tmdb.isConfigured()) return null;
 
     const cache = await this.repository.getTmdbTvWeekCache(window.weekStart);
-    const decision = getCacheDecision({
+    const decision = getRefreshDecision({
       weekStart: window.weekStart,
       now,
       cache,
@@ -192,24 +204,36 @@ export class ReleasesService {
 
     if (!decision.shouldFetch) return null;
 
-    try {
-      const result = await this.tmdb.getTvAirings({
+    return this.queueRefresh(async () => {
+      const latestCache = await this.repository.getTmdbTvWeekCache(window.weekStart);
+      const latestDecision = getRefreshDecision({
         weekStart: window.weekStart,
-        weekEnd: window.weekEnd,
+        now,
+        cache: latestCache,
+        forceRefresh,
       });
 
-      await this.repository.saveTmdbTvWeek({
-        weekStart: window.weekStart,
-        weekEnd: window.weekEnd,
-        fetchedAt: now,
-        expiresAt: getNextExpiry(window.weekStart, now),
-        releases: result.releases,
-        raw: result.raw,
-      });
-      return null;
-    } catch (error) {
-      return error instanceof Error ? error.message : "TMDB TV refresh failed.";
-    }
+      if (!latestDecision.shouldFetch) return null;
+
+      try {
+        const result = await this.tmdb.getTvAirings({
+          weekStart: window.weekStart,
+          weekEnd: window.weekEnd,
+        });
+
+        await this.repository.saveTmdbTvWeek({
+          weekStart: window.weekStart,
+          weekEnd: window.weekEnd,
+          fetchedAt: now,
+          expiresAt: getNextExpiry(window.weekStart, now),
+          releases: result.releases,
+          raw: result.raw,
+        });
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : "TMDB TV refresh failed.";
+      }
+    });
   }
 
   private async getTmdbCacheSnapshot(
@@ -238,9 +262,9 @@ export class ReleasesService {
     };
   }
 
-  private queueRefresh(refresh: () => Promise<void>): Promise<void> {
+  private queueRefresh<T>(refresh: () => Promise<T>): Promise<T> {
     const run = this.refreshChain.catch(() => undefined).then(refresh);
-    this.refreshChain = run.catch(() => undefined);
+    this.refreshChain = run.then(() => undefined, () => undefined);
     return run;
   }
 
@@ -267,6 +291,12 @@ export class ReleasesService {
       tv: sorted.filter((release) => release.mediaType === "tv"),
     };
   }
+}
+
+function getRefreshDecision(input: Parameters<typeof getCacheDecision>[0]) {
+  const normalDecision = getCacheDecision({ ...input, forceRefresh: false });
+  if (normalDecision.reason === "frozen-past") return normalDecision;
+  return getCacheDecision(input);
 }
 
 function compareRelease(a: NormalizedRelease, b: NormalizedRelease): number {

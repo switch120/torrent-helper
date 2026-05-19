@@ -57,6 +57,8 @@ export class ReleaseDetailComponent implements OnInit, OnDestroy {
   readonly customDownloadDir = signal("");
   readonly addStatus = signal<"idle" | "adding" | "done" | "error">("idle");
   readonly addError = signal<string | null>(null);
+  readonly duplicateWarning = signal<string | null>(null);
+  readonly duplicateStatus = signal<"idle" | "checking" | "ready" | "error">("idle");
   readonly hasFetchedTorrents = signal(false);
   readonly bottomHoldActive = signal(false);
   readonly bottomHoldProgress = signal(0);
@@ -126,7 +128,10 @@ export class ReleaseDetailComponent implements OnInit, OnDestroy {
     this.selectedTorrent.set(torrent);
     this.addStatus.set("idle");
     this.addError.set(null);
+    this.duplicateWarning.set(null);
+    this.duplicateStatus.set("checking");
     this.downloadDir.set(torrent.quality === "2160p" ? "/data/Movies/4k" : "/data/Movies/Sourced");
+    void this.checkDuplicate(torrent.magnetLink);
   }
 
   closeAddDialog(): void {
@@ -140,7 +145,8 @@ export class ReleaseDetailComponent implements OnInit, OnDestroy {
     this.addStatus.set("adding");
     this.addError.set(null);
     try {
-      await this.api.addDownload(detail.eventId, torrent.magnetLink, this.chosenDownloadDir());
+      const response = await this.api.addDownload(detail.eventId, torrent.magnetLink, this.chosenDownloadDir());
+      if (response.warning) this.duplicateWarning.set(response.warning);
       this.addStatus.set("done");
       this.selectedTorrent.set(null);
     } catch (error) {
@@ -220,5 +226,15 @@ export class ReleaseDetailComponent implements OnInit, OnDestroy {
 
   private canBottomFetch(): boolean {
     return this.status() === "ready" && this.torrentStatus() !== "loading" && Boolean(this.detail());
+  }
+
+  private async checkDuplicate(magnetLink: string): Promise<void> {
+    try {
+      const response = await this.api.checkDownloadDuplicate(magnetLink);
+      this.duplicateWarning.set(response.warning);
+      this.duplicateStatus.set("ready");
+    } catch {
+      this.duplicateStatus.set("error");
+    }
   }
 }

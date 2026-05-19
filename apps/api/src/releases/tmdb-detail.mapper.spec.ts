@@ -13,6 +13,7 @@ describe("TMDB detail mapping", () => {
       backdrop_path: "/backdrop.jpg",
       poster_path: "/poster.jpg",
       release_date: "2026-03-09",
+      original_language: "ko",
       runtime: 132,
       genres: [{ id: 878, name: "Science Fiction" }],
       credits: {
@@ -35,6 +36,9 @@ describe("TMDB detail mapping", () => {
       runtimeMinutes: 132,
       genres: ["Science Fiction"],
       imdbId: "tt12042730",
+      originalLanguage: "ko",
+      isInternational: true,
+      isDubbed: false,
     });
     expect(detail.cast.map((member) => member.name)).toEqual(["Ryan Gosling", "Sandra Huller"]);
   });
@@ -51,6 +55,7 @@ describe("TMDB detail mapping", () => {
         backdrop_path: "/tv-backdrop.jpg",
         poster_path: "/tv-poster.jpg",
         first_air_date: "2022-08-24",
+        original_language: "en",
         genres: [{ id: 99, name: "Documentary" }],
         aggregate_credits: {
           cast: [{ id: 10, name: "Rob McElhenney", roles: [{ character: "Self" }], order: 0 }],
@@ -74,6 +79,9 @@ describe("TMDB detail mapping", () => {
       episodeCount: 8,
       genres: ["Documentary"],
       imdbId: "tt14674086",
+      originalLanguage: "en",
+      isInternational: false,
+      isDubbed: false,
     });
     expect(detail.cast[0]).toMatchObject({ name: "Rob McElhenney", character: "Self" });
   });

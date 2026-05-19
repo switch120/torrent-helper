@@ -6,11 +6,14 @@ import {
   addWeeks,
   buildReleaseSections,
   cacheLabel,
+  canHideShow,
+  collectAddableProviderFilters,
+  collectHiddenShowFilters,
   collectProviderFilters,
+  DEFAULT_SELECTED_PROVIDERS,
   formatWeekRange,
   providerDisplayName,
   providerKeyFromName,
-  releaseSources,
   showKey,
   startOfIsoWeek,
   weekEndFromStart,
@@ -22,12 +25,13 @@ type ReleaseWeekState = {
   status: ReleaseWeekStatus;
   settingsStatus: "idle" | "loading" | "ready" | "error";
   error: string | null;
-  hiddenProviderKeys: string[];
+  selectedProviderKeys: string[];
   hiddenShowKeys: string[];
   knownProviders: ProviderFilter[];
-  focusedProviderKey: string | null;
   favoriteShowKeys: string[];
   showOnlyFavorites: boolean;
+  showInternational: boolean;
+  showDubbed: boolean;
 };
 
 const initialWeekStart = startOfIsoWeek();
@@ -40,35 +44,64 @@ export const ReleaseWeekStore = signalStore(
     status: "idle",
     settingsStatus: "idle",
     error: null,
-    hiddenProviderKeys: [],
+    selectedProviderKeys: DEFAULT_SELECTED_PROVIDERS.map((provider) => provider.key),
     hiddenShowKeys: [],
-    knownProviders: [],
-    focusedProviderKey: null,
+    knownProviders: DEFAULT_SELECTED_PROVIDERS,
     favoriteShowKeys: [],
     showOnlyFavorites: false,
+    showInternational: false,
+    showDubbed: false,
   }),
   withComputed((store) => ({
-    hiddenProviderKeySet: computed(() => new Set(store.hiddenProviderKeys())),
+    selectedProviderKeySet: computed(() => new Set(store.selectedProviderKeys())),
     favoriteShowKeySet: computed(() => new Set(store.favoriteShowKeys())),
     sections: computed(() =>
       buildReleaseSections(
         store.response(),
-        new Set(store.hiddenProviderKeys()),
+        new Set(store.selectedProviderKeys()),
         new Set(store.hiddenShowKeys()),
-        store.focusedProviderKey(),
         {
           showOnlyFavorites: store.showOnlyFavorites(),
           favoriteShowKeys: new Set(store.favoriteShowKeys()),
+          showInternational: store.showInternational(),
+          showDubbed: store.showDubbed(),
         },
       ),
     ),
     providerFilters: computed(() =>
-      collectProviderFilters(store.response(), new Set(store.hiddenProviderKeys()), store.knownProviders()),
+      collectProviderFilters(store.response(), new Set(store.selectedProviderKeys()), store.knownProviders(), {
+        hiddenShowKeys: new Set(store.hiddenShowKeys()),
+        showOnlyFavorites: store.showOnlyFavorites(),
+        favoriteShowKeys: new Set(store.favoriteShowKeys()),
+        showInternational: store.showInternational(),
+        showDubbed: store.showDubbed(),
+      }),
     ),
-    hiddenProviderFilters: computed(() =>
-      collectProviderFilters(store.response(), new Set(store.hiddenProviderKeys()), store.knownProviders()).filter(
-        (provider) => provider.hidden,
+    selectedProviderFilters: computed(() =>
+      orderedSelectedProviders(
+        collectProviderFilters(store.response(), new Set(store.selectedProviderKeys()), store.knownProviders(), {
+          hiddenShowKeys: new Set(store.hiddenShowKeys()),
+          showOnlyFavorites: store.showOnlyFavorites(),
+          favoriteShowKeys: new Set(store.favoriteShowKeys()),
+          showInternational: store.showInternational(),
+          showDubbed: store.showDubbed(),
+        }),
+        store.selectedProviderKeys(),
       ),
+    ),
+    addableProviderFilters: computed(() =>
+      collectAddableProviderFilters(
+        collectProviderFilters(store.response(), new Set(store.selectedProviderKeys()), store.knownProviders(), {
+          hiddenShowKeys: new Set(store.hiddenShowKeys()),
+          showOnlyFavorites: store.showOnlyFavorites(),
+          favoriteShowKeys: new Set(store.favoriteShowKeys()),
+          showInternational: store.showInternational(),
+          showDubbed: store.showDubbed(),
+        }),
+      ),
+    ),
+    hiddenShowFilters: computed(() =>
+      collectHiddenShowFilters(store.response(), new Set(store.hiddenShowKeys())),
     ),
     weekRange: computed(() => {
       const response = store.response();
@@ -83,15 +116,13 @@ export const ReleaseWeekStore = signalStore(
   })),
   withMethods((store, api = inject(ReleaseApiClient)) => {
     function currentSettings(): UserSettings {
-      const hiddenSet = new Set(store.hiddenProviderKeys());
       return {
-        hiddenProviders: store.knownProviders().map((provider) => ({
-          key: providerKeyFromName(provider.name),
-          name: providerDisplayName(provider.name),
-          hidden: hiddenSet.has(providerKeyFromName(provider.name)),
-        })),
+        hiddenProviders: [],
+        selectedProviders: selectedProviderPreferences(store.knownProviders(), store.selectedProviderKeys()),
         hiddenShowKeys: unique(store.hiddenShowKeys()),
         showOnlyFavorites: store.showOnlyFavorites(),
+        showInternational: store.showInternational(),
+        showDubbed: store.showDubbed(),
       };
     }
 
@@ -107,16 +138,18 @@ export const ReleaseWeekStore = signalStore(
     }
 
     function patchSettings(settings: UserSettings) {
-      const knownProviders = mergeKnownProviders(store.knownProviders(), settings.hiddenProviders);
+      const selectedProviders = settings.selectedProviders;
+      const knownProviders = mergeKnownProviders(
+        DEFAULT_SELECTED_PROVIDERS,
+        mergeKnownProviders(store.knownProviders(), selectedProviders),
+      );
       patchState(store, {
-        hiddenProviderKeys: unique(
-          settings.hiddenProviders
-            .filter((provider) => provider.hidden)
-            .map((provider) => providerKeyFromName(provider.name)),
-        ),
+        selectedProviderKeys: unique(selectedProviders.map((provider) => providerKeyFromName(provider.name))),
         hiddenShowKeys: unique(settings.hiddenShowKeys),
         knownProviders,
-        showOnlyFavorites: settings.showOnlyFavorites,
+        showOnlyFavorites: settings.showOnlyFavorites === true,
+        showInternational: settings.showInternational === true,
+        showDubbed: settings.showDubbed === true,
         settingsStatus: "ready",
       });
     }
@@ -149,7 +182,7 @@ export const ReleaseWeekStore = signalStore(
 
         const knownProviders = mergeKnownProviders(
           store.knownProviders(),
-          collectProviderFilters(response, new Set(store.hiddenProviderKeys()), store.knownProviders()),
+          collectProviderFilters(response, new Set(store.selectedProviderKeys()), store.knownProviders()),
         );
 
         patchState(store, {
@@ -159,7 +192,6 @@ export const ReleaseWeekStore = signalStore(
           error: null,
           knownProviders,
         });
-        void persistSettings();
       } catch (error) {
         patchState(store, {
           status: "error",
@@ -174,50 +206,25 @@ export const ReleaseWeekStore = signalStore(
       refresh: () => load(store.weekStart(), true),
       previousWeek: () => load(addWeeks(store.weekStart(), -1), false),
       nextWeek: () => load(addWeeks(store.weekStart(), 1), false),
-      hideProvider: (release: DigitalRelease) => {
-        const source = releaseSources(release)[0];
-        const key = source.key;
-        const hiddenProviderKeys = unique([...store.hiddenProviderKeys(), key]);
-        const knownProviders = mergeKnownProviders(store.knownProviders(), [
-          { key, name: source.name, hidden: true },
-        ]);
-        patchState(store, { hiddenProviderKeys, knownProviders });
+      addSelectedProvider: (key: string) => {
+        if (!key || store.selectedProviderKeys().includes(key)) return;
+        const provider = store.providerFilters().find((candidate) => candidate.key === key);
+        if (!provider) return;
+        const knownProviders = mergeKnownProviders(store.knownProviders(), [provider]);
+        patchState(store, {
+          selectedProviderKeys: unique([...store.selectedProviderKeys(), key]),
+          knownProviders,
+        });
         void persistSettings();
       },
-      hideProviderKey: (key: string, name: string) => {
-        const canonicalKey = providerKeyFromName(name);
-        const hiddenProviderKeys = unique([...store.hiddenProviderKeys(), canonicalKey]);
-        const knownProviders = mergeKnownProviders(store.knownProviders(), [
-          { key: canonicalKey, name, hidden: true },
-        ]);
-        patchState(store, { hiddenProviderKeys, knownProviders });
-        void persistSettings();
-      },
-      setProviderHidden: (key: string, hidden: boolean) => {
-        const provider = store.knownProviders().find((candidate) => candidate.key === key);
-        const canonicalKey = provider ? providerKeyFromName(provider.name) : key;
-        const hiddenProviderKeys = hidden
-          ? unique([...store.hiddenProviderKeys(), canonicalKey])
-          : store.hiddenProviderKeys().filter((candidate) => candidate !== canonicalKey);
-        const knownProviders = store.knownProviders().map((provider) =>
-          provider.key === canonicalKey ? { ...provider, hidden } : provider,
-        );
-        patchState(store, { hiddenProviderKeys, knownProviders });
-        void persistSettings();
-      },
-      setFocusedProvider: (key: string) => {
-        const focusedProviderKey = key || null;
-        const hiddenProviderKeys = focusedProviderKey
-          ? store.hiddenProviderKeys().filter((candidate) => candidate !== focusedProviderKey)
-          : store.hiddenProviderKeys();
-        const knownProviders = store.knownProviders().map((provider) =>
-          provider.key === focusedProviderKey ? { ...provider, hidden: false } : provider,
-        );
-
-        patchState(store, { focusedProviderKey, hiddenProviderKeys, knownProviders });
+      removeSelectedProvider: (key: string) => {
+        patchState(store, {
+          selectedProviderKeys: store.selectedProviderKeys().filter((candidate) => candidate !== key),
+        });
         void persistSettings();
       },
       hideShow: (release: DigitalRelease) => {
+        if (!canHideShow(release, new Set(store.favoriteShowKeys()))) return;
         const key = showKey(release);
         if (!key) return;
         patchState(store, { hiddenShowKeys: unique([...store.hiddenShowKeys(), key]) });
@@ -227,8 +234,22 @@ export const ReleaseWeekStore = signalStore(
         patchState(store, { hiddenShowKeys: [] });
         void persistSettings();
       },
+      restoreHiddenShow: (key: string) => {
+        patchState(store, {
+          hiddenShowKeys: store.hiddenShowKeys().filter((candidate) => candidate !== key),
+        });
+        void persistSettings();
+      },
       setShowOnlyFavorites: (showOnlyFavorites: boolean) => {
         patchState(store, { showOnlyFavorites });
+        void persistSettings();
+      },
+      setShowInternational: (showInternational: boolean) => {
+        patchState(store, { showInternational });
+        void persistSettings();
+      },
+      setShowDubbed: (showDubbed: boolean) => {
+        patchState(store, { showDubbed });
         void persistSettings();
       },
       addFavorite: async (release: DigitalRelease) => {
@@ -256,7 +277,8 @@ function normalizeProvider(provider: ProviderFilter): ProviderFilter {
   return {
     key: providerKeyFromName(provider.name),
     name: providerDisplayName(provider.name),
-    hidden: provider.hidden,
+    hidden: false,
+    selected: provider.selected,
     count: provider.count,
     disabled: provider.disabled,
   };
@@ -264,4 +286,31 @@ function normalizeProvider(provider: ProviderFilter): ProviderFilter {
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function orderedSelectedProviders(
+  providers: ProviderFilter[],
+  selectedProviderKeys: string[],
+): ProviderFilter[] {
+  const byKey = new Map(providers.map((provider) => [provider.key, provider]));
+  return selectedProviderKeys
+    .map((key) => byKey.get(key))
+    .filter((provider): provider is ProviderFilter => Boolean(provider))
+    .map((provider) => ({ ...provider, selected: true, hidden: false }));
+}
+
+function selectedProviderPreferences(
+  knownProviders: ProviderFilter[],
+  selectedProviderKeys: string[],
+): ProviderFilter[] {
+  const byKey = new Map(knownProviders.map((provider) => [provider.key, provider]));
+  return selectedProviderKeys.map((key) => {
+    const provider = byKey.get(key);
+    return {
+      key,
+      name: providerDisplayName(provider?.name ?? key.replace(/^provider:/, "")),
+      hidden: false,
+      selected: true,
+    };
+  });
 }

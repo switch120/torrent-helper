@@ -22,6 +22,7 @@ describe("TmdbClient", () => {
                   overview: "A movie with a digital street date.",
                   poster_path: "/poster.jpg",
                   release_date: "2026-01-01",
+                  original_language: "th",
                   popularity: 80.5,
                   vote_average: 7.8,
                   vote_count: 120,
@@ -80,6 +81,9 @@ describe("TmdbClient", () => {
         voteAverage: 7.8,
         voteCount: 120,
         isFeaturedDigital: true,
+        originalLanguage: "th",
+        isInternational: true,
+        isDubbed: false,
       }),
     ]);
   });
@@ -182,6 +186,7 @@ describe("TmdbClient", () => {
                   overview: "A rich life gets complicated.",
                   poster_path: "/your-friends.jpg",
                   first_air_date: "2019-11-01",
+                  original_language: "en",
                   popularity: 56.7,
                   vote_average: 8.1,
                   vote_count: 1200,
@@ -220,6 +225,7 @@ describe("TmdbClient", () => {
             original_name: "Your Friends & Neighbors",
             poster_path: "/your-friends.jpg",
             first_air_date: "2019-11-01",
+            original_language: "en",
             external_ids: { imdb_id: "tt31867398" },
             networks: [{ id: 2552, name: "Apple TV+" }],
             seasons: [
@@ -263,6 +269,9 @@ describe("TmdbClient", () => {
         episodeName: "In the Week",
         voteAverage: 8.1,
         voteCount: 1200,
+        originalLanguage: "en",
+        isInternational: false,
+        isDubbed: false,
       }),
     ]);
     expect(result.releases).toHaveLength(1);

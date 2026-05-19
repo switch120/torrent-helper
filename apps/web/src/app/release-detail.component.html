@@ -36,11 +36,11 @@
           @for (genre of item.genres; track genre) {
             <small>{{ genre }}</small>
           }
-          @if (item.imdbId) {
-            <small>{{ item.imdbId }}</small>
+          @if (item.isInternational) {
+            <small class="language-chip is-international">International{{ item.originalLanguage ? " · " + item.originalLanguage.toUpperCase() : "" }}</small>
           }
-          @if (item.tmdbId) {
-            <small>TMDB {{ item.tmdbId }}</small>
+          @if (item.isDubbed) {
+            <small class="language-chip is-dubbed">Dubbed</small>
           }
         </div>
       </div>
@@ -168,6 +168,11 @@
         <small>{{ torrent.seeders }}/{{ torrent.leechers }} S/L</small>
         <small>{{ formatTorrentAge(torrent.publishedAt) }}</small>
       </div>
+      @if (duplicateStatus() === "checking") {
+        <p class="duplicate-warning is-muted">Checking download history...</p>
+      } @else if (duplicateWarning()) {
+        <p class="duplicate-warning">{{ duplicateWarning() }}</p>
+      }
       <label>
         Save to
         <select [ngModel]="downloadDir()" (ngModelChange)="downloadDir.set($event)">
@@ -188,7 +193,7 @@
       <div class="dialog-actions">
         <button type="button" class="source-chip" (click)="closeAddDialog()">Cancel</button>
         <button type="button" class="refresh-button" (click)="addSelectedTorrent()" [disabled]="addStatus() === 'adding'">
-          {{ addStatus() === "adding" ? "Adding..." : "Add to Transmission" }}
+          {{ addStatus() === "adding" ? "Adding..." : duplicateWarning() ? "Add anyway" : "Add to Transmission" }}
         </button>
       </div>
     </section>

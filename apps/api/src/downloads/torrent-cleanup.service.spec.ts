@@ -12,10 +12,12 @@ describe("TorrentCleanupService", () => {
       ]),
       removeTorrent: vi.fn(async () => undefined),
     };
-    const service = new TorrentCleanupService(transmission);
+    const repository = createRepository();
+    const service = new TorrentCleanupService(transmission, repository);
 
     await service.cleanupCompletedTorrents();
 
+    expect(repository.markDownloadRecordsCompleted).toHaveBeenCalledWith(2, expect.any(Date));
     expect(transmission.removeTorrent).toHaveBeenCalledTimes(1);
     expect(transmission.removeTorrent).toHaveBeenCalledWith(2);
   });
@@ -26,7 +28,7 @@ describe("TorrentCleanupService", () => {
       getDownloads: vi.fn(() => deferredDownloads.promise),
       removeTorrent: vi.fn(async () => undefined),
     };
-    const service = new TorrentCleanupService(transmission);
+    const service = new TorrentCleanupService(transmission, createRepository());
 
     const firstRun = service.cleanupCompletedTorrents();
     const secondRun = service.cleanupCompletedTorrents();
@@ -38,6 +40,12 @@ describe("TorrentCleanupService", () => {
     expect(transmission.removeTorrent).toHaveBeenCalledWith(9);
   });
 });
+
+function createRepository() {
+  return {
+    markDownloadRecordsCompleted: vi.fn(async () => 0),
+  };
+}
 
 function download(overrides: Partial<TransmissionDownload>): TransmissionDownload {
   return {

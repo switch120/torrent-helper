@@ -3,12 +3,17 @@ import {
   addWeeks,
   buildReleaseSections,
   cacheLabel,
+  canHideShow,
+  collectAddableProviderFilters,
   collectProviderFilters,
+  collectHiddenShowFilters,
+  DEFAULT_SELECTED_PROVIDERS,
   formatTmdbRating,
   ratingToneClass,
   formatWeekRange,
   normalizeWeekStartParam,
   providerKey,
+  providerKeyFromName,
   showKey,
   startOfIsoWeek,
   weekEndFromStart,
@@ -121,13 +126,13 @@ describe("release week utilities", () => {
       ],
     };
 
-    expect(buildReleaseSections(response, new Set([providerKey(response.movies[0])]))).toEqual([
-      { title: "Movies", count: 1, hiddenCount: 0, emptyText: "No movie releases cached for this week.", releases: [response.movies[1]] },
-      { title: "TV", count: 1, hiddenCount: 0, emptyText: "No TV releases cached for this week.", releases: response.tv },
+    expect(buildReleaseSections(response, new Set([providerKeyFromName("Hulu")]))).toEqual([
+      { title: "Movies", count: 2, hiddenCount: 0, emptyText: "No movie releases cached for this week.", releases: response.movies },
+      { title: "TV", count: 0, hiddenCount: 0, emptyText: "No TV releases cached for this week.", releases: [] },
     ]);
   });
 
-  it("normalizes provider filters, counts TV rows, and sorts empty providers last", () => {
+  it("normalizes provider filters, counts consolidated TV rows, and keeps seed labels selected", () => {
     const appleTvWatchMode = tvRelease({
       eventId: "watchmode-apple",
       releaseSource: "watchmode",
@@ -154,14 +159,95 @@ describe("release week utilities", () => {
     const response = responseWith({ tv: [appleTvWatchMode, appleTvTmdb, hulu] });
 
     expect(
-      collectProviderFilters(response, new Set(["provider:appletv"]), [
-        { key: "watchmode:371", name: "AppleTV+", hidden: true },
+      collectProviderFilters(response, new Set(DEFAULT_SELECTED_PROVIDERS.map((provider) => provider.key)), [
+        ...DEFAULT_SELECTED_PROVIDERS,
         { key: "watchmode:999", name: "AMC", hidden: false },
-      ]),
+      ]).filter((provider) => ["provider:appletv", "provider:hulu", "provider:amc"].includes(provider.key)),
     ).toEqual([
-      { key: "provider:appletv", name: "Apple TV+", hidden: true, count: 1, disabled: false },
-      { key: "provider:hulu", name: "Hulu", hidden: false, count: 1, disabled: false },
-      { key: "provider:amc", name: "AMC", hidden: false, count: 0, disabled: true },
+      { key: "provider:appletv", name: "Apple TV+", hidden: false, selected: true, count: 1, disabled: false },
+      { key: "provider:hulu", name: "Hulu", hidden: false, selected: true, count: 1, disabled: false },
+      { key: "provider:amc", name: "AMC", hidden: false, selected: false, count: 0, disabled: true },
+    ]);
+  });
+
+  it("lists addable providers outside the current selected set with zero-count options last", () => {
+    const response = responseWith({
+      tv: [
+        tvRelease({ eventId: "hulu", sourceName: "Hulu", title: "Hulu Show", tmdbId: 1 }),
+        tvRelease({ eventId: "amc", sourceName: "AMC", title: "AMC Show", tmdbId: 2 }),
+      ],
+    });
+    const filters = collectProviderFilters(response, new Set([providerKeyFromName("Hulu")]), [
+      { key: "provider:hulu", name: "Hulu", hidden: false },
+      { key: "provider:netflix", name: "Netflix", hidden: false },
+    ]);
+
+    expect(collectAddableProviderFilters(filters)).toEqual([
+      { key: "provider:amc", name: "AMC", hidden: false, selected: false, count: 1, disabled: false },
+      { key: "provider:netflix", name: "Netflix", hidden: false, selected: false, count: 0, disabled: true },
+    ]);
+  });
+
+  it("counts providers from the same filtered TV rows shown in the section", () => {
+    const favorite = tvRelease({
+      eventId: "favorite",
+      title: "Favorite Show",
+      tmdbId: 100,
+      sourceName: "Hulu",
+    });
+    const hidden = tvRelease({
+      eventId: "hidden",
+      title: "Hidden Show",
+      tmdbId: 101,
+      sourceName: "Hulu",
+    });
+    const otherProvider = tvRelease({
+      eventId: "other-provider",
+      title: "Other Provider Show",
+      tmdbId: 102,
+      sourceName: "Netflix",
+    });
+    const response = responseWith({ tv: [favorite, hidden, otherProvider] });
+    const selectedProviders = new Set([providerKeyFromName("Hulu")]);
+    const hiddenShows = new Set([showKey(hidden)]);
+
+    expect(
+      buildReleaseSections(response, selectedProviders, hiddenShows, {
+        showOnlyFavorites: true,
+        favoriteShowKeys: new Set([showKey(favorite)]),
+      })[1].count,
+    ).toBe(1);
+    expect(
+      collectProviderFilters(response, selectedProviders, DEFAULT_SELECTED_PROVIDERS, {
+        hiddenShowKeys: hiddenShows,
+        showOnlyFavorites: true,
+        favoriteShowKeys: new Set([showKey(favorite)]),
+      }).find((provider) => provider.key === providerKeyFromName("Hulu"))?.count,
+    ).toBe(1);
+  });
+
+  it("lists hidden shows from the current week so they can be restored individually", () => {
+    const hidden = tvRelease({
+      eventId: "hidden",
+      title: "Hidden Show",
+      tmdbId: 101,
+      posterUrl: "/hidden.jpg",
+    });
+    const visible = tvRelease({
+      eventId: "visible",
+      title: "Visible Show",
+      tmdbId: 102,
+    });
+
+    expect(collectHiddenShowFilters(responseWith({ tv: [hidden, visible] }), new Set([showKey(hidden)]))).toEqual([
+      {
+        key: "tmdb:101",
+        title: "Hidden Show",
+        posterUrl: "/hidden.jpg",
+        releaseDate: "2026-05-14",
+        seasonNumber: 1,
+        episodeNumber: 1,
+      },
     ]);
   });
 
@@ -208,7 +294,40 @@ describe("release week utilities", () => {
       voteCount: 1800,
       sources: [
         { key: "provider:hulu", name: "Hulu" },
-        { key: "provider:max", name: "MAX" },
+        { key: "provider:max", name: "Max" },
+      ],
+    });
+  });
+
+  it("consolidates daily TV airings into one visible show card for the week", () => {
+    const monday = tvRelease({
+      eventId: "chronicles-monday",
+      title: "Chronicles of the Sun",
+      tmdbId: 300,
+      sourceName: "Prime Video",
+      releaseDate: "2026-05-04",
+      seasonNumber: 8,
+      episodeNumber: 104,
+    });
+    const friday = tvRelease({
+      eventId: "chronicles-friday",
+      title: "Chronicles of the Sun",
+      tmdbId: 300,
+      sourceName: "The Roku Channel",
+      releaseDate: "2026-05-08",
+      seasonNumber: 8,
+      episodeNumber: 108,
+    });
+
+    const sections = buildReleaseSections(responseWith({ tv: [monday, friday] }));
+
+    expect(sections[1].count).toBe(1);
+    expect(sections[1].releases[0]).toMatchObject({
+      title: "Chronicles of the Sun",
+      seasonNumber: 8,
+      sources: [
+        { key: "provider:prime", name: "Prime" },
+        { key: "provider:therokuchannel", name: "The Roku Channel" },
       ],
     });
   });
@@ -247,13 +366,30 @@ describe("release week utilities", () => {
     };
 
     expect(showKey(show)).toBe("tmdb:20");
-    expect(buildReleaseSections(response, new Set(), new Set([showKey(show)]))[1]).toEqual({
+    expect(buildReleaseSections(response, new Set([providerKeyFromName("Prime")]), new Set([showKey(show)]))[1]).toEqual({
       title: "TV",
       count: 0,
       hiddenCount: 1,
       emptyText: "No TV releases cached for this week.",
       releases: [],
     });
+  });
+
+  it("requires favorite shows to be unfavorited before they can be hidden", () => {
+    const favorite = tvRelease({
+      eventId: "favorite",
+      title: "Favorite Show",
+      tmdbId: 101,
+    });
+    const nonFavorite = tvRelease({
+      eventId: "plain",
+      title: "Plain Show",
+      tmdbId: 102,
+    });
+
+    expect(canHideShow(favorite, new Set([showKey(favorite)]))).toBe(false);
+    expect(canHideShow(nonFavorite, new Set([showKey(favorite)]))).toBe(true);
+    expect(canHideShow({ ...favorite, mediaType: "movie" }, new Set([showKey(favorite)]))).toBe(false);
   });
 
   it("filters TV releases to favorite shows when requested", () => {
@@ -296,16 +432,16 @@ describe("release week utilities", () => {
       tv: [favoriteShow, otherShow],
     };
 
-    const sections = buildReleaseSections(response, new Set(), new Set(), null, {
+    const sections = buildReleaseSections(response, new Set([providerKeyFromName("Prime")]), new Set(), {
       showOnlyFavorites: true,
       favoriteShowKeys: new Set([showKey(favoriteShow)]),
     });
 
     expect(sections[1].releases).toEqual([favoriteShow]);
-    expect(sections[1].hiddenCount).toBe(1);
+    expect(sections[1].hiddenCount).toBe(0);
   });
 
-  it("can focus releases to a selected provider even when that provider is hidden", () => {
+  it("filters provider-backed TV to the selected provider allow-list", () => {
     const netflixMovie = {
       eventId: "movie-netflix",
       watchmodeId: 1,
@@ -357,10 +493,40 @@ describe("release week utilities", () => {
       tv: [huluShow],
     };
 
-    expect(buildReleaseSections(response, new Set([providerKey(huluShow)]), new Set(), providerKey(huluShow))).toEqual([
-      { title: "Movies", count: 0, hiddenCount: 0, emptyText: "No movie releases cached for this week.", releases: [] },
+    expect(buildReleaseSections(response, new Set([providerKey(huluShow)]))).toEqual([
+      { title: "Movies", count: 1, hiddenCount: 0, emptyText: "No movie releases cached for this week.", releases: [netflixMovie] },
       { title: "TV", count: 1, hiddenCount: 0, emptyText: "No TV releases cached for this week.", releases: [huluShow] },
     ]);
+  });
+
+  it("hides international and dubbed releases unless language filters include them", () => {
+    const domesticMovie = movieRelease({ eventId: "movie-domestic", title: "Domestic Movie" });
+    const internationalMovie = movieRelease({
+      eventId: "movie-international",
+      title: "International Movie",
+      originalLanguage: "th",
+      isInternational: true,
+    });
+    const dubbedShow = tvRelease({
+      eventId: "tv-dubbed",
+      title: "Dubbed Show",
+      isDubbed: true,
+    });
+    const response = responseWith({
+      movies: [domesticMovie, internationalMovie],
+      tv: [dubbedShow],
+    });
+
+    expect(buildReleaseSections(response, null)[0].releases.map((release) => release.title)).toEqual([
+      "Domestic Movie",
+    ]);
+    expect(buildReleaseSections(response, null)[1].releases).toEqual([]);
+    expect(
+      buildReleaseSections(response, null, new Set(), {
+        showInternational: true,
+        showDubbed: true,
+      }).map((section) => section.releases.map((release) => release.title)),
+    ).toEqual([["Domestic Movie", "International Movie"], ["Dubbed Show"]]);
   });
 
   it("describes cache state quietly", () => {
@@ -405,6 +571,29 @@ function tvRelease(overrides: Partial<DigitalRelease>): DigitalRelease {
     sourceType: "unknown",
     seasonNumber: 1,
     episodeNumber: 1,
+    isOriginal: false,
+    ...overrides,
+  };
+}
+
+function movieRelease(overrides: Partial<DigitalRelease>): DigitalRelease {
+  return {
+    eventId: "movie",
+    watchmodeId: 1,
+    releaseSource: "tmdb",
+    releaseKind: "digital",
+    title: "Movie",
+    titleType: "movie",
+    mediaType: "movie",
+    tmdbId: 10,
+    tmdbType: "movie",
+    imdbId: null,
+    posterUrl: null,
+    releaseDate: "2026-05-14",
+    sourceId: 0,
+    sourceName: "Digital release",
+    sourceType: "digital",
+    seasonNumber: null,
     isOriginal: false,
     ...overrides,
   };

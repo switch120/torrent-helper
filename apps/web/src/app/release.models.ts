@@ -28,6 +28,9 @@ export type DigitalRelease = {
   voteAverage?: number | null;
   voteCount?: number | null;
   isFeaturedDigital?: boolean;
+  originalLanguage?: string | null;
+  isInternational?: boolean;
+  isDubbed?: boolean;
   sources?: ReleaseProviderSource[];
 };
 
@@ -66,8 +69,18 @@ export type ProviderFilter = {
   key: string;
   name: string;
   hidden: boolean;
+  selected?: boolean;
   count?: number;
   disabled?: boolean;
+};
+
+export type HiddenShowFilter = {
+  key: string;
+  title: string;
+  posterUrl: string | null;
+  releaseDate: string;
+  seasonNumber: number | null;
+  episodeNumber?: number | null;
 };
 
 export type AuthPublicConfig = {
@@ -87,8 +100,11 @@ export type AuthenticatedUser = {
 
 export type UserSettings = {
   hiddenProviders: ProviderFilter[];
+  selectedProviders: ProviderFilter[];
   hiddenShowKeys: string[];
   showOnlyFavorites: boolean;
+  showInternational: boolean;
+  showDubbed: boolean;
 };
 
 export type ReleaseCastMember = {
@@ -117,6 +133,9 @@ export type ReleaseDetail = {
   cast: ReleaseCastMember[];
   imdbId: string | null;
   tmdbId: number | null;
+  originalLanguage: string | null;
+  isInternational: boolean;
+  isDubbed: boolean;
 };
 
 export type TorrentQuality = "2160p" | "1080p" | "720p" | "480p" | "unknown";
@@ -177,6 +196,38 @@ export type ProxyHealth = {
 export type DownloadListResponse = {
   downloads: TransmissionDownload[];
   proxy: ProxyHealth;
+};
+
+export type DownloadHistoryStatus = "pending" | "downloaded" | "completed" | "canceled";
+
+export type DownloadHistoryEntry = {
+  id: number;
+  userId: number | null;
+  releaseEventId: string;
+  tmdbId: number | null;
+  title: string | null;
+  transmissionTorrentId: number | null;
+  torrentName: string;
+  magnetLink: string;
+  magnetHash: string | null;
+  downloadDir: string;
+  status: DownloadHistoryStatus;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
+export type AddDownloadResponse = {
+  download: TransmissionDownload | null;
+  historyRecord: DownloadHistoryEntry;
+  duplicate: boolean;
+  warning: string | null;
+};
+
+export type DownloadDuplicateResponse = {
+  duplicate: boolean;
+  historyRecord: DownloadHistoryEntry | null;
+  warning: string | null;
 };
 
 export type FavoriteEpisodeSummary = {

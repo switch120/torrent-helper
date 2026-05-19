@@ -43,62 +43,17 @@
     }
   </section>
 
-  @if (store.providerFilters().length > 0 || store.hiddenProviderFilters().length > 0 || (store.response()?.tv?.length ?? 0) > 0 || store.favoriteShowKeys().length > 0) {
-    <section class="filter-bar" aria-label="Release filters">
-      <div class="radio-filter" role="radiogroup" aria-label="TV release favorites filter">
-        <label class="pill-toggle">
-          <input
-            type="radio"
-            name="week-favorite-filter"
-            [checked]="!store.showOnlyFavorites()"
-            (change)="store.setShowOnlyFavorites(false)"
-          >
-          <span>All</span>
-        </label>
-        <label class="pill-toggle">
-          <input
-            type="radio"
-            name="week-favorite-filter"
-            [checked]="store.showOnlyFavorites()"
-            (change)="store.setShowOnlyFavorites(true)"
-          >
-          <span>Favorites</span>
-        </label>
-      </div>
-
-      @if (store.providerFilters().length > 0) {
-        <div class="provider-focus-strip" aria-label="Provider filter">
-          <label>
-            Provider
-            <select [ngModel]="store.focusedProviderKey() || ''" (ngModelChange)="store.setFocusedProvider($event)">
-              <option value="">All providers</option>
-              @for (provider of store.providerFilters(); track provider.key) {
-                <option [value]="provider.key" [disabled]="provider.disabled">
-                  {{ provider.name }} ({{ provider.count ?? 0 }}){{ provider.hidden ? " hidden" : "" }}
-                </option>
-              }
-            </select>
-          </label>
-        </div>
-      }
-
-      @if (store.hiddenProviderFilters().length > 0) {
-        <div class="filter-strip hidden-provider-strip" aria-label="Hidden providers">
-          <span>Hidden providers</span>
-          <div class="filter-list">
-            @for (provider of store.hiddenProviderFilters(); track provider.key) {
-              <label>
-                <input
-                  type="checkbox"
-                  [checked]="provider.hidden"
-                  (change)="store.setProviderHidden(provider.key, $any($event.target).checked)"
-                >
-                {{ provider.name }}
-              </label>
-            }
-          </div>
-        </div>
-      }
+  @if (store.providerFilters().length > 0 || (store.response()?.tv?.length ?? 0) > 0 || store.favoriteShowKeys().length > 0) {
+    <section class="filter-bar is-compact" aria-label="Release filters">
+      <a
+        class="settings-gear-button"
+        [routerLink]="modalRoute('settings')"
+        queryParamsHandling="preserve"
+        aria-label="Open release filters and provider settings"
+        title="Release settings"
+      >
+        <span aria-hidden="true">&#9881;</span>
+      </a>
     </section>
   }
 
@@ -120,8 +75,9 @@
                 <button
                   type="button"
                   class="hidden-count"
-                  (click)="store.clearHiddenShows()"
-                  aria-label="Restore hidden shows"
+                  [routerLink]="modalRoute('settings', 'hidden-shows')"
+                  queryParamsHandling="preserve"
+                  aria-label="Review hidden shows"
                 >
                   {{ section.hiddenCount }} hidden
                 </button>
@@ -171,8 +127,11 @@
                         <button
                           type="button"
                           class="hide-show-button"
-                          (click)="stop($event); store.hideShow(release)"
+                          [class.is-disabled]="!canHide(release)"
+                          [disabled]="!canHide(release)"
+                          (click)="hideShow($event, release)"
                           [attr.aria-label]="'Hide ' + release.title"
+                          [title]="canHide(release) ? 'Hide show' : 'Unfavorite before hiding'"
                         >
                           x
                         </button>
@@ -196,19 +155,17 @@
                         </span>
                       } @else {
                         @for (source of releaseSources(release); track source.key) {
-                          <button
-                            type="button"
-                            class="source-chip"
-                            (click)="hideProvider($event, source)"
-                            [attr.aria-label]="'Hide ' + source.name"
-                          >
-                            <span>{{ source.name }}</span>
-                            <strong aria-hidden="true">x</strong>
-                          </button>
+                          <span class="source-chip is-static">{{ source.name }}</span>
                         }
                       }
                       @if (formatTmdbRating(release); as rating) {
                         <small [class]="ratingToneClass(release)">{{ rating }}</small>
+                      }
+                      @if (release.isInternational) {
+                        <small class="language-chip is-international">International{{ release.originalLanguage ? " · " + release.originalLanguage.toUpperCase() : "" }}</small>
+                      }
+                      @if (release.isDubbed) {
+                        <small class="language-chip is-dubbed">Dubbed</small>
                       }
                     </div>
                   </div>

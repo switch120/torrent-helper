@@ -26,5 +26,8 @@ export type ReleaseDetail = {
   cast: ReleaseCastMember[];
   imdbId: string | null;
   tmdbId: number | null;
+  originalLanguage: string | null;
+  isInternational: boolean;
+  isDubbed: boolean;
   raw: unknown;
 };

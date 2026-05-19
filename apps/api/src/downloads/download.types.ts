@@ -53,3 +53,35 @@ export type AddTorrentResult = {
   hashString: string | null;
   duplicate: boolean;
 };
+
+export type DownloadHistoryStatus = "pending" | "downloaded" | "completed" | "canceled";
+
+export type DownloadHistoryEntry = {
+  id: number;
+  userId: number | null;
+  releaseEventId: string;
+  tmdbId: number | null;
+  title: string | null;
+  transmissionTorrentId: number | null;
+  torrentName: string;
+  magnetLink: string;
+  magnetHash: string | null;
+  downloadDir: string;
+  status: DownloadHistoryStatus;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
+export type AddDownloadResponse = {
+  download: TransmissionDownload | null;
+  historyRecord: DownloadHistoryEntry;
+  duplicate: boolean;
+  warning: string | null;
+};
+
+export type DownloadDuplicateResponse = {
+  duplicate: boolean;
+  historyRecord: DownloadHistoryEntry | null;
+  warning: string | null;
+};

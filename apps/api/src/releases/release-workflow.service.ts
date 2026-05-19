@@ -9,7 +9,15 @@ import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.ty
 import type { TransmissionRpcClient } from "../downloads/transmission-rpc.client";
 import { validateDownloadDir } from "../downloads/download-path";
 import { buildDownloadStatus, extractProxyIp, isProxyCheckerDownload } from "../downloads/download-status";
-import type { DownloadListResponse, TransmissionDownload } from "../downloads/download.types";
+import type {
+  AddDownloadResponse,
+  DownloadDuplicateResponse,
+  DownloadHistoryEntry,
+  DownloadHistoryStatus,
+  DownloadListResponse,
+  TransmissionDownload,
+} from "../downloads/download.types";
+import { extractMagnetHash } from "../downloads/magnet-link";
 import { PublicIpResolver } from "../downloads/public-ip-resolver";
 
 type Clock = () => Date;
@@ -54,6 +62,9 @@ export class ReleaseWorkflowService {
         cast: [],
         imdbId: release.imdbId,
         tmdbId: release.tmdbId,
+        originalLanguage: release.originalLanguage ?? null,
+        isInternational: release.isInternational === true,
+        isDubbed: release.isDubbed === true,
         raw: { fallback: true },
       };
     }
@@ -97,9 +108,10 @@ export class ReleaseWorkflowService {
   }
 
   async addDownload(
+    userId: number,
     eventId: string,
     input: { magnetLink?: string; downloadDir?: string },
-  ): Promise<{ download: TransmissionDownload | null }> {
+  ): Promise<AddDownloadResponse> {
     const release = await this.getRelease(eventId);
     const magnetLink = input.magnetLink || "";
     if (!magnetLink.startsWith("magnet:")) {
@@ -111,25 +123,40 @@ export class ReleaseWorkflowService {
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : "Invalid download directory.");
     }
+    const inputHash = extractMagnetHash(magnetLink);
+    let duplicateRecord = await this.repository.findDownloadRecordByMagnet(userId, magnetLink, inputHash);
     const resolvedMagnetLink = await this.prowlarr.resolveMagnetForRelease(release, magnetLink);
+    const resolvedHash = extractMagnetHash(resolvedMagnetLink);
+    if (!duplicateRecord && (resolvedMagnetLink !== magnetLink || resolvedHash !== inputHash)) {
+      duplicateRecord = await this.repository.findDownloadRecordByMagnet(userId, resolvedMagnetLink, resolvedHash);
+    }
     const added = await this.transmission.addMagnet(resolvedMagnetLink, downloadDir);
-    await this.repository.saveDownloadRecord({
+    const historyRecord = await this.repository.saveDownloadRecord({
+      userId,
       releaseEventId: eventId,
+      tmdbId: release.tmdbId,
+      title: release.title,
       transmissionTorrentId: added.id,
       torrentName: added.name,
       magnetLink: resolvedMagnetLink,
-      magnetHash: added.hashString,
+      magnetHash: added.hashString || resolvedHash,
       downloadDir,
+      status: "pending",
     });
 
-    const downloads = await this.listDownloads();
-    return { download: downloads.find((download) => download.id === added.id) || null };
+    const downloads = await this.listDownloads(userId);
+    return {
+      download: downloads.find((download) => download.id === added.id) || null,
+      historyRecord: this.toHistoryEntry(historyRecord, downloads.find((download) => download.id === added.id) || null),
+      duplicate: Boolean(duplicateRecord),
+      warning: duplicateRecord ? duplicateWarning(duplicateRecord.createdAt) : null,
+    };
   }
 
-  async listDownloads(): Promise<TransmissionDownload[]> {
+  async listDownloads(userId?: number): Promise<TransmissionDownload[]> {
     const [downloads, records] = await Promise.all([
       this.transmission.getDownloads(),
-      this.repository.getDownloadRecords(),
+      this.repository.getDownloadRecords(userId),
     ]);
     const byTorrentId = new Map(records.map((record) => [record.transmissionTorrentId, record]));
     return downloads.map((download) => ({
@@ -138,14 +165,49 @@ export class ReleaseWorkflowService {
     }));
   }
 
-  async getDownloadStatus(): Promise<DownloadListResponse> {
-    const downloads = await this.listDownloads();
+  async getDownloadStatus(userId?: number): Promise<DownloadListResponse> {
+    const downloads = await this.listDownloads(userId);
     const proxyChecker = downloads.find(isProxyCheckerDownload) || null;
     const proxyIp = proxyChecker ? extractProxyIp(proxyChecker.errorString) : null;
     const publicIp = proxyIp
       ? await this.publicIpResolver.getPublicIp(this.clock()).catch(() => null)
       : null;
     return buildDownloadStatus(downloads, publicIp, this.clock());
+  }
+
+  async getDownloadHistory(userId: number): Promise<DownloadHistoryEntry[]> {
+    const [downloads, records] = await Promise.all([
+      this.transmission.getDownloads(),
+      this.repository.getDownloadRecords(userId),
+    ]);
+    const activeDownloads = new Map(downloads.map((download) => [download.id, download]));
+    return records.map((record) => this.toHistoryEntry(
+      record,
+      record.transmissionTorrentId ? activeDownloads.get(record.transmissionTorrentId) || null : null,
+    ));
+  }
+
+  async getDownloadDuplicate(
+    userId: number,
+    magnetLink: string,
+  ): Promise<DownloadDuplicateResponse> {
+    if (!magnetLink.startsWith("magnet:")) {
+      throw new BadRequestException("A magnet link is required.");
+    }
+    const record = await this.repository.findDownloadRecordByMagnet(
+      userId,
+      magnetLink,
+      extractMagnetHash(magnetLink),
+    );
+    return {
+      duplicate: Boolean(record),
+      historyRecord: record ? this.toHistoryEntry(record, null) : null,
+      warning: record ? duplicateWarning(record.createdAt) : null,
+    };
+  }
+
+  async deleteDownloadHistory(userId: number, id: number): Promise<{ deleted: boolean }> {
+    return { deleted: await this.repository.deleteDownloadRecord(userId, id) };
   }
 
   private async getTvDetail(release: Awaited<ReturnType<ReleaseWorkflowService["getRelease"]>>): Promise<ReleaseDetail> {
@@ -183,9 +245,44 @@ export class ReleaseWorkflowService {
     if (!release) throw new NotFoundException("Release was not found.");
     return release;
   }
+
+  private toHistoryEntry(
+    record: Awaited<ReturnType<ReleaseRepository["getDownloadRecords"]>>[number],
+    activeDownload: TransmissionDownload | null,
+  ): DownloadHistoryEntry {
+    return {
+      id: record.id,
+      userId: record.userId,
+      releaseEventId: record.releaseEventId,
+      tmdbId: record.tmdbId,
+      title: record.title,
+      transmissionTorrentId: record.transmissionTorrentId,
+      torrentName: record.torrentName,
+      magnetLink: record.magnetLink,
+      magnetHash: record.magnetHash,
+      downloadDir: record.downloadDir,
+      status: resolveHistoryStatus(record.status, activeDownload),
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+      completedAt: record.completedAt?.toISOString() ?? null,
+    };
+  }
 }
 
 function normalizeQuality(quality: string): TorrentSearchQuality {
   if (quality === "1080p" || quality === "2160p" || quality === "any") return quality;
   throw new BadRequestException("Quality must be 1080p, 2160p, or any.");
+}
+
+function resolveHistoryStatus(
+  storedStatus: DownloadHistoryStatus,
+  activeDownload: TransmissionDownload | null,
+): DownloadHistoryStatus {
+  if (storedStatus === "completed" || storedStatus === "canceled") return storedStatus;
+  if (activeDownload && (activeDownload.percentDone >= 1 || activeDownload.rawStatus === 6)) return "downloaded";
+  return storedStatus;
+}
+
+function duplicateWarning(createdAt: Date): string {
+  return `This magnet was already added on ${createdAt.toISOString().slice(0, 10)}.`;
 }

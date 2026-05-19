@@ -28,6 +28,9 @@ export type NormalizedRelease = {
   voteAverage?: number | null;
   voteCount?: number | null;
   isFeaturedDigital?: boolean;
+  originalLanguage?: string | null;
+  isInternational?: boolean;
+  isDubbed?: boolean;
 };
 
 export type ReleaseCacheStatus = "fresh" | "stale";

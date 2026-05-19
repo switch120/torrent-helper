@@ -5,6 +5,13 @@
       <h1>Downloads</h1>
     </div>
     <div class="download-actions">
+      <a
+        class="history-button"
+        [routerLink]="modalRoute('downloads', 'history')"
+        queryParamsHandling="preserve"
+        aria-label="Open download history"
+        title="Download history"
+      >↺</a>
       @if (proxy(); as proxyStatus) {
         <div [class]="proxyToneClass(proxyStatus.status)">
           <strong>{{ proxyStatusLabel(proxyStatus.status) }}</strong>

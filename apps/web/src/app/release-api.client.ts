@@ -3,13 +3,15 @@ import { Injectable, inject } from "@angular/core";
 import { firstValueFrom } from "rxjs";
 import type {
   AuthenticatedUser,
+  AddDownloadResponse,
+  DownloadDuplicateResponse,
+  DownloadHistoryEntry,
   DownloadListResponse,
   FavoriteShowSummary,
   ReleaseDetail,
   ReleaseWeekResponse,
   TorrentSearchQuality,
   TorrentSearchResponse,
-  TransmissionDownload,
   UserSettings,
 } from "./release.models";
 
@@ -55,9 +57,9 @@ export class ReleaseApiClient {
     eventId: string,
     magnetLink: string,
     downloadDir: string,
-  ): Promise<{ download: TransmissionDownload | null }> {
+  ): Promise<AddDownloadResponse> {
     return firstValueFrom(
-      this.http.post<{ download: TransmissionDownload | null }>(
+      this.http.post<AddDownloadResponse>(
         `/api/releases/${encodeURIComponent(eventId)}/downloads`,
         { magnetLink, downloadDir },
       ),
@@ -66,6 +68,23 @@ export class ReleaseApiClient {
 
   getDownloads(): Promise<DownloadListResponse> {
     return firstValueFrom(this.http.get<DownloadListResponse>("/api/downloads"));
+  }
+
+  getDownloadHistory(): Promise<DownloadHistoryEntry[]> {
+    return firstValueFrom(this.http.get<DownloadHistoryEntry[]>("/api/downloads/history"));
+  }
+
+  checkDownloadDuplicate(magnetLink: string): Promise<DownloadDuplicateResponse> {
+    const params = new HttpParams().set("magnetLink", magnetLink);
+    return firstValueFrom(
+      this.http.get<DownloadDuplicateResponse>("/api/downloads/history/duplicate", { params }),
+    );
+  }
+
+  deleteDownloadHistory(id: number): Promise<{ deleted: boolean }> {
+    return firstValueFrom(
+      this.http.delete<{ deleted: boolean }>(`/api/downloads/history/${id}`),
+    );
   }
 
   getSettings(): Promise<UserSettings> {

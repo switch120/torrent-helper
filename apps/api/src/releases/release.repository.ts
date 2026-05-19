@@ -1,16 +1,24 @@
 import type { FetchCacheSnapshot, NormalizedRelease } from "./release.types";
 import type { ReleaseDetail } from "./release-detail.types";
 import type { WatchModeQuota } from "./watchmode.client";
+import type { DownloadHistoryStatus } from "../downloads/download.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
 export type DownloadRecordSnapshot = {
   id: number;
+  userId: number | null;
   releaseEventId: string;
+  tmdbId: number | null;
+  title: string | null;
   transmissionTorrentId: number | null;
   torrentName: string;
   magnetLink: string;
   magnetHash: string | null;
   downloadDir: string;
+  status: DownloadHistoryStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
 };
 
 export type SaveWatchModeFetchInput = {
@@ -90,12 +98,23 @@ export interface ReleaseRepository {
     expiresAt: Date;
   }): Promise<void>;
   saveDownloadRecord(input: {
+    userId: number;
     releaseEventId: string;
+    tmdbId: number | null;
+    title: string;
     transmissionTorrentId: number | null;
     torrentName: string;
     magnetLink: string;
     magnetHash: string | null;
     downloadDir: string;
+    status: DownloadHistoryStatus;
   }): Promise<DownloadRecordSnapshot>;
-  getDownloadRecords(): Promise<DownloadRecordSnapshot[]>;
+  getDownloadRecords(userId?: number): Promise<DownloadRecordSnapshot[]>;
+  findDownloadRecordByMagnet(
+    userId: number,
+    magnetLink: string,
+    magnetHash: string | null,
+  ): Promise<DownloadRecordSnapshot | null>;
+  markDownloadRecordsCompleted(transmissionTorrentId: number, completedAt: Date): Promise<number>;
+  deleteDownloadRecord(userId: number, id: number): Promise<boolean>;
 }

@@ -1,8 +1,25 @@
 <nav class="app-nav" aria-label="Release hub navigation">
   <div class="nav-links">
-    <a routerLink="/" queryParamsHandling="preserve">Release weeks</a>
-    <a [routerLink]="modalRoute('favorites')" queryParamsHandling="preserve">Favorites</a>
-    <a [routerLink]="modalRoute('downloads')" queryParamsHandling="preserve">Downloads</a>
+    <a routerLink="/" queryParamsHandling="preserve">
+      <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/>
+        <path d="M8 13h3M8 16h6"/>
+      </svg>
+      Release weeks
+    </a>
+    <a [routerLink]="modalRoute('favorites')" queryParamsHandling="preserve">
+      <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>
+      </svg>
+      Favorites
+    </a>
+    <a [routerLink]="modalRoute('downloads')" queryParamsHandling="preserve">
+      <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3v10M8 9l4 4 4-4"/>
+        <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/>
+      </svg>
+      Downloads
+    </a>
   </div>
 
   <div class="auth-actions">

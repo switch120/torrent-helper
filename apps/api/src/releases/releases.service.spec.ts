@@ -417,6 +417,99 @@ describe("ReleasesService", () => {
     expect(result.tv.map((item) => item.sourceName)).toEqual(["Apple TV+"]);
   });
 
+  it("does not force-refresh cached past TMDB weeks", async () => {
+    const repository = createRepository();
+    repository.getTmdbDigitalWeekCache.mockResolvedValue({
+      weekStart: "2026-05-04",
+      weekEnd: "2026-05-10",
+      fetchedAt: new Date("2026-05-12T12:00:00.000Z"),
+      status: "fresh",
+      warning: null,
+    });
+    repository.getTmdbTvWeekCache.mockResolvedValue({
+      weekStart: "2026-05-04",
+      weekEnd: "2026-05-10",
+      fetchedAt: new Date("2026-05-12T12:00:00.000Z"),
+      status: "fresh",
+      warning: null,
+    });
+    repository.getTmdbDigitalMovies.mockResolvedValue([
+      release({
+        eventId: "tmdb:digital:100:2026-05-05",
+        releaseSource: "tmdb",
+        releaseKind: "digital",
+        title: "Cached Digital",
+        mediaType: "movie",
+        tmdbId: 100,
+        releaseDate: "2026-05-05",
+        sourceName: "Digital release",
+        sourceType: "digital",
+      }),
+    ]);
+    const tmdb = createTmdb();
+    const service = new ReleasesService(repository, createWatchMode(), tmdb, () => new Date("2026-05-18T12:00:00.000Z"));
+
+    const result = await service.refreshWeek("2026-05-04");
+
+    expect(tmdb.getDigitalMovieReleases).not.toHaveBeenCalled();
+    expect(tmdb.getTvAirings).not.toHaveBeenCalled();
+    expect(result.movies.map((item) => item.title)).toEqual(["Cached Digital"]);
+    expect(result.cache.warning).toBeNull();
+  });
+
+  it("serializes overlapping TMDB week refreshes and reuses the cache warmed by the first fetch", async () => {
+    const repository = createRepository();
+    let digitalCacheWarmed = false;
+    repository.getTmdbDigitalWeekCache.mockImplementation(async () =>
+      digitalCacheWarmed
+        ? {
+            weekStart: "2026-05-18",
+            weekEnd: "2026-05-24",
+            fetchedAt: new Date("2026-05-18T12:00:00.000Z"),
+            status: "fresh",
+            warning: null,
+          }
+        : null,
+    );
+    repository.saveTmdbDigitalWeek.mockImplementation(async () => {
+      digitalCacheWarmed = true;
+    });
+    repository.getTmdbTvWeekCache.mockResolvedValue({
+      weekStart: "2026-05-18",
+      weekEnd: "2026-05-24",
+      fetchedAt: new Date("2026-05-18T12:00:00.000Z"),
+      status: "fresh",
+      warning: null,
+    });
+    const tmdbRelease = release({
+      eventId: "tmdb:digital:100:2026-05-19",
+      releaseSource: "tmdb",
+      releaseKind: "digital",
+      title: "Warmed Digital",
+      mediaType: "movie",
+      tmdbId: 100,
+      releaseDate: "2026-05-19",
+      sourceName: "Digital release",
+      sourceType: "digital",
+    });
+    repository.getTmdbDigitalMovies.mockResolvedValue([tmdbRelease]);
+    const tmdb = createTmdb({ releases: [tmdbRelease] });
+    tmdb.getDigitalMovieReleases.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { releases: [tmdbRelease], raw: { results: [] } };
+    });
+    const service = new ReleasesService(repository, createWatchMode(), tmdb, () => new Date("2026-05-18T12:00:00.000Z"));
+
+    const [first, second] = await Promise.all([
+      service.getWeek("2026-05-18"),
+      service.getWeek("2026-05-18"),
+    ]);
+
+    expect(tmdb.getDigitalMovieReleases).toHaveBeenCalledTimes(1);
+    expect(first.movies.map((item) => item.title)).toEqual(["Warmed Digital"]);
+    expect(second.movies.map((item) => item.title)).toEqual(["Warmed Digital"]);
+  });
+
   it("collapses duplicate TMDB TV cached rows for the same episode", async () => {
     const repository = createRepository();
     repository.getTmdbTvAirings.mockResolvedValue([
@@ -604,6 +697,9 @@ function createRepository() {
     saveTorrentSearchCache: vi.fn().mockResolvedValue(undefined),
     saveDownloadRecord: vi.fn(),
     getDownloadRecords: vi.fn().mockResolvedValue([]),
+    findDownloadRecordByMagnet: vi.fn().mockResolvedValue(null),
+    markDownloadRecordsCompleted: vi.fn().mockResolvedValue(0),
+    deleteDownloadRecord: vi.fn().mockResolvedValue(false),
   } satisfies ReleaseRepository;
 }
 
@@ -680,14 +776,24 @@ function createStatefulRepository(): ReleaseRepository {
     saveTorrentSearchCache: vi.fn(async () => undefined),
     saveDownloadRecord: vi.fn(async () => ({
       id: 1,
+      userId: 1,
       releaseEventId: "event",
+      tmdbId: 10,
+      title: "Movie",
       transmissionTorrentId: 1,
       torrentName: "Torrent",
       magnetLink: "magnet:?xt=urn:btih:abc",
       magnetHash: "abc",
       downloadDir: "/data/Movies/Sourced",
+      status: "pending" as const,
+      createdAt: new Date("2026-05-16T12:00:00.000Z"),
+      updatedAt: new Date("2026-05-16T12:00:00.000Z"),
+      completedAt: null,
     })),
     getDownloadRecords: vi.fn(async () => []),
+    findDownloadRecordByMagnet: vi.fn(async () => null),
+    markDownloadRecordsCompleted: vi.fn(async () => 0),
+    deleteDownloadRecord: vi.fn(async () => false),
   };
 }
 
