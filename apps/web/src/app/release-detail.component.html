@@ -33,6 +33,9 @@
         </div>
         <p class="overview">{{ item.overview || "No overview is cached for this release yet." }}</p>
         <div class="source-line">
+          @for (source of releaseStreamingSources(item.release); track source.key) {
+            <small class="source-chip is-static">{{ source.name }}</small>
+          }
           @for (genre of item.genres; track genre) {
             <small>{{ genre }}</small>
           }

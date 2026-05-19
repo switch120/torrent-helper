@@ -28,6 +28,7 @@ export type DigitalRelease = {
   voteAverage?: number | null;
   voteCount?: number | null;
   isFeaturedDigital?: boolean;
+  isDigitalDateFallback?: boolean;
   originalLanguage?: string | null;
   isInternational?: boolean;
   isDubbed?: boolean;

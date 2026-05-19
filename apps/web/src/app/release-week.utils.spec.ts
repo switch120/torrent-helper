@@ -14,6 +14,7 @@ import {
   normalizeWeekStartParam,
   providerKey,
   providerKeyFromName,
+  releaseStreamingSources,
   showKey,
   startOfIsoWeek,
   weekEndFromStart,
@@ -45,6 +46,33 @@ describe("release week utilities", () => {
     expect(ratingToneClass({ voteAverage: 5.9 })).toBe("rating-chip is-cool");
     expect(ratingToneClass({ voteAverage: 7.2 })).toBe("rating-chip is-warm");
     expect(ratingToneClass({ voteAverage: 8.1 })).toBe("rating-chip is-hot");
+  });
+
+  it("surfaces streaming providers for digital movie releases without the digital source chip", () => {
+    expect(
+      releaseStreamingSources(
+        movieRelease({
+          sources: [
+            {
+              key: "provider:disneyplus",
+              name: "Disney Plus",
+              sourceId: 337,
+              sourceType: "sub",
+              releaseSource: "tmdb",
+            },
+          ],
+        }),
+      ),
+    ).toEqual([
+      {
+        key: "provider:disney",
+        name: "Disney+",
+        sourceId: 337,
+        sourceType: "sub",
+        releaseSource: "tmdb",
+      },
+    ]);
+    expect(releaseStreamingSources(movieRelease())).toEqual([]);
   });
 
   it("normalizes a remembered date to its Monday week start", () => {

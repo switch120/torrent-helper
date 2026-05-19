@@ -18,6 +18,7 @@ import {
   sortTorrents,
   type TorrentSortKey,
 } from "./torrent.utils";
+import { releaseStreamingSources } from "./release-week.utils";
 
 @Component({
   selector: "app-release-detail",
@@ -77,6 +78,7 @@ export class ReleaseDetailComponent implements OnInit, OnDestroy {
   readonly bottomHoldPercent = computed(() => `${Math.round(this.bottomHoldProgress() * 100)}%`);
 
   readonly formatBytes = formatBytes;
+  readonly releaseStreamingSources = releaseStreamingSources;
   readonly confidenceLabel = confidenceLabel;
   readonly confidenceTone = confidenceTone;
   readonly formatTorrentAge = formatTorrentAge;

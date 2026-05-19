@@ -66,7 +66,9 @@ describe("TmdbClient", () => {
     expect(calls[0]).toContain("with_release_type=4");
     expect(calls[0]).toContain("release_date.gte=2026-05-11");
     expect(calls[0]).toContain("release_date.lte=2026-05-17");
-    expect(calls[1]).toContain("/3/movie/100/release_dates");
+    expect(calls.some((url) => url.includes("with_release_type=2"))).toBe(true);
+    expect(calls.some((url) => url.includes("with_release_type=3"))).toBe(true);
+    expect(calls.some((url) => url.includes("/3/movie/100/release_dates"))).toBe(true);
     expect(result.releases).toEqual([
       expect.objectContaining({
         eventId: "tmdb:digital:100:2026-05-12",
@@ -86,6 +88,11 @@ describe("TmdbClient", () => {
         isDubbed: false,
       }),
     ]);
+    expect(result.raw).toEqual(
+      expect.objectContaining({
+        digitalDatePolicy: "original-us-digital-with-streaming-providers-v1",
+      }),
+    );
   });
 
   it("keeps older catalog digital dates out of the featured lane", async () => {
@@ -148,6 +155,278 @@ describe("TmdbClient", () => {
         isFeaturedDigital: false,
       }),
     ]);
+  });
+
+  it("ignores later digital availability when the original digital release was earlier", async () => {
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      fetchImpl: async (url) => {
+        if (url.includes("/discover/movie")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: [
+                {
+                  id: 901,
+                  title: "The Bride!",
+                  poster_path: "/bride.jpg",
+                  release_date: "2026-03-06",
+                  popularity: 48,
+                  vote_count: 200,
+                },
+              ],
+            }),
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 901,
+            results: [
+              {
+                iso_3166_1: "US",
+                release_dates: [
+                  {
+                    release_date: "2026-03-06T00:00:00.000Z",
+                    type: 3,
+                  },
+                  {
+                    note: "Premium digital",
+                    release_date: "2026-04-07T00:00:00.000Z",
+                    type: 4,
+                  },
+                  {
+                    note: "Streaming availability",
+                    release_date: "2026-05-22T00:00:00.000Z",
+                    type: 4,
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getDigitalMovieReleases({
+      weekStart: "2026-05-18",
+      weekEnd: "2026-05-24",
+    });
+
+    expect(result.releases).toEqual([]);
+  });
+
+  it("includes same-week new movie releases when TMDB has no explicit digital date", async () => {
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      fetchImpl: async (url) => {
+        if (url.includes("/discover/movie") && url.includes("with_release_type=4")) {
+          return new Response(JSON.stringify({ page: 1, total_pages: 1, results: [] }));
+        }
+
+        if (url.includes("/discover/movie")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: [
+                {
+                  id: 1398050,
+                  title: "Driver's Ed",
+                  poster_path: "/drivers-ed.jpg",
+                  release_date: "2026-05-14",
+                  popularity: 8.6541,
+                  vote_count: 6,
+                },
+              ],
+            }),
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 1398050,
+            results: [
+              {
+                iso_3166_1: "US",
+                release_dates: [
+                  {
+                    note: "Limited",
+                    release_date: "2026-05-15T00:00:00.000Z",
+                    type: 3,
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getDigitalMovieReleases({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(result.releases).toEqual([
+      expect.objectContaining({
+        eventId: "tmdb:digital:1398050:2026-05-15",
+        title: "Driver's Ed",
+        releaseDate: "2026-05-15",
+        sourceName: "New release",
+        isFeaturedDigital: true,
+        isDigitalDateFallback: true,
+      }),
+    ]);
+  });
+
+  it("hydrates movie streaming providers without treating rental stores as streaming availability", async () => {
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      fetchImpl: async (url) => {
+        if (url.includes("/discover/movie") && !url.includes("with_release_type=4")) {
+          return new Response(JSON.stringify({ page: 1, total_pages: 1, results: [] }));
+        }
+
+        if (url.includes("/discover/movie")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: [
+                {
+                  id: 1439930,
+                  title: "The Punisher: One Last Kill",
+                  poster_path: "/punisher.jpg",
+                  release_date: "2026-05-12",
+                  popularity: 671,
+                  vote_count: 906,
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url.includes("/watch/providers")) {
+          return new Response(
+            JSON.stringify({
+              id: 1439930,
+              results: {
+                US: {
+                  flatrate: [
+                    {
+                      provider_id: 337,
+                      provider_name: "Disney Plus",
+                    },
+                  ],
+                  rent: [
+                    {
+                      provider_id: 2,
+                      provider_name: "Apple TV Store",
+                    },
+                  ],
+                },
+              },
+            }),
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 1439930,
+            results: [
+              {
+                iso_3166_1: "US",
+                release_dates: [
+                  {
+                    release_date: "2026-05-12T00:00:00.000Z",
+                    type: 4,
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getDigitalMovieReleases({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(result.releases).toEqual([
+      expect.objectContaining({
+        title: "The Punisher: One Last Kill",
+        sources: [
+          {
+            key: "provider:disneyplus",
+            name: "Disney Plus",
+            releaseSource: "tmdb",
+            sourceId: 337,
+            sourceType: "sub",
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("keeps old theatrical rereleases out of the new-release fallback", async () => {
+    const releaseDateCalls: string[] = [];
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      fetchImpl: async (url) => {
+        if (url.includes("/discover/movie") && url.includes("with_release_type=4")) {
+          return new Response(JSON.stringify({ page: 1, total_pages: 1, results: [] }));
+        }
+
+        if (url.includes("/discover/movie")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: [
+                {
+                  id: 808,
+                  title: "Shrek",
+                  poster_path: "/shrek.jpg",
+                  release_date: "2001-05-18",
+                  popularity: 34.0042,
+                  vote_count: 18718,
+                },
+              ],
+            }),
+          );
+        }
+
+        releaseDateCalls.push(url);
+        return new Response(
+          JSON.stringify({
+            id: 808,
+            results: [
+              {
+                iso_3166_1: "US",
+                release_dates: [
+                  {
+                    release_date: "2026-05-15T00:00:00.000Z",
+                    type: 3,
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getDigitalMovieReleases({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(result.releases).toEqual([]);
+    expect(releaseDateCalls).toEqual([]);
   });
 
   it("is disabled without an API key or read access token", () => {

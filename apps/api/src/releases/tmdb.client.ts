@@ -1,4 +1,4 @@
-import type { NormalizedRelease } from "./release.types";
+import type { NormalizedRelease, ReleaseProviderSource } from "./release.types";
 import { hasDubbedCue, isInternationalLanguage, normalizeOriginalLanguage } from "./release-language";
 import type {
   TmdbMovieDetailResponse,
@@ -92,10 +92,37 @@ type TmdbPersonExternalIdsResponse = {
   imdb_id?: string | null;
 };
 
+type TmdbWatchProvider = {
+  provider_id: number;
+  provider_name: string;
+};
+
+type TmdbWatchProvidersResponse = {
+  id: number;
+  results?: {
+    US?: {
+      flatrate?: TmdbWatchProvider[];
+      free?: TmdbWatchProvider[];
+      ads?: TmdbWatchProvider[];
+      rent?: TmdbWatchProvider[];
+      buy?: TmdbWatchProvider[];
+    };
+  };
+};
+
 type DigitalMovie = {
   movie: TmdbMovieSummary;
   releaseDate: string;
+  releaseDateSource: TmdbMovieReleaseDateSource;
+  streamingProviders: ReleaseProviderSource[];
   rawReleaseDates: TmdbReleaseDatesResponse;
+};
+
+type TmdbMovieReleaseDateSource = "digital" | "new-release-fallback";
+
+type TmdbMovieReleaseDateMatch = {
+  date: string;
+  source: TmdbMovieReleaseDateSource;
 };
 
 type TvEpisodeAiring = {
@@ -112,6 +139,8 @@ type TvShowDiscovery = {
 };
 
 const digitalReleaseType = 4;
+const newReleaseFallbackTypes = [2, 3];
+const tmdbDigitalDatePolicy = "original-us-digital-with-streaming-providers-v1";
 const featuredReleaseWindowDays = 548;
 const featuredVoteThreshold = 25;
 const featuredPopularityThreshold = 20;
@@ -163,22 +192,47 @@ export class TmdbClient {
       return { releases: [], raw: { disabled: true } };
     }
 
-    const discoverPages = await this.fetchDiscoverPages(input);
-    const movies = uniqueMovies(discoverPages.flatMap((page) => page.results || []));
+    const digitalDiscoverPages = await this.fetchDiscoverPages(input, digitalReleaseType);
+    const fallbackDiscoverGroups = await Promise.all(
+      newReleaseFallbackTypes.map((releaseType) => this.fetchDiscoverPages(input, releaseType)),
+    );
+    const fallbackDiscoverPages = fallbackDiscoverGroups.flat();
+    const digitalMovieCandidates = digitalDiscoverPages.flatMap((page) => page.results || []);
+    const newReleaseCandidates = fallbackDiscoverPages
+      .flatMap((page) => page.results || [])
+      .filter((movie) => isDateInWindow(movie.release_date, input.weekStart, input.weekEnd));
+    const movies = uniqueMovies([...digitalMovieCandidates, ...newReleaseCandidates]);
     const digitalMovies: DigitalMovie[] = [];
 
     for (const movie of movies) {
       const rawReleaseDates = await this.fetchReleaseDates(movie.id);
-      const releaseDate = findDigitalReleaseDate(rawReleaseDates, input.weekStart, input.weekEnd);
-      if (!releaseDate) continue;
+      const releaseDateMatch = findDigitalReleaseDate(
+        rawReleaseDates,
+        input.weekStart,
+        input.weekEnd,
+        movie.release_date || null,
+      );
+      if (!releaseDateMatch) continue;
 
-      digitalMovies.push({ movie, releaseDate, rawReleaseDates });
+      const streamingProviders = await this.fetchMovieStreamingProviders(movie.id);
+
+      digitalMovies.push({
+        movie,
+        releaseDate: releaseDateMatch.date,
+        releaseDateSource: releaseDateMatch.source,
+        streamingProviders,
+        rawReleaseDates,
+      });
     }
 
     return {
       releases: digitalMovies.map((item) => this.normalizeDigitalMovie(item)),
       raw: {
-        discover: discoverPages,
+        digitalDatePolicy: tmdbDigitalDatePolicy,
+        discover: {
+          digital: digitalDiscoverPages,
+          newReleaseFallback: fallbackDiscoverPages,
+        },
         releaseDates: digitalMovies.map((item) => item.rawReleaseDates),
       },
     };
@@ -232,16 +286,19 @@ export class TmdbClient {
     };
   }
 
-  private async fetchDiscoverPages(input: {
-    weekStart: string;
-    weekEnd: string;
-  }): Promise<TmdbDiscoverResponse[]> {
-    const firstPage = await this.fetchDiscoverPage(input, 1);
+  private async fetchDiscoverPages(
+    input: {
+      weekStart: string;
+      weekEnd: string;
+    },
+    releaseType: number,
+  ): Promise<TmdbDiscoverResponse[]> {
+    const firstPage = await this.fetchDiscoverPage(input, releaseType, 1);
     const pages = [firstPage];
     const totalPages = Math.min(firstPage.total_pages || 1, this.maxPages);
 
     for (let page = 2; page <= totalPages; page += 1) {
-      pages.push(await this.fetchDiscoverPage(input, page));
+      pages.push(await this.fetchDiscoverPage(input, releaseType, page));
     }
 
     return pages;
@@ -320,6 +377,7 @@ export class TmdbClient {
 
   private async fetchDiscoverPage(
     input: { weekStart: string; weekEnd: string },
+    releaseType: number,
     page: number,
   ): Promise<TmdbDiscoverResponse> {
     const url = this.url("/3/discover/movie");
@@ -329,7 +387,7 @@ export class TmdbClient {
     url.searchParams.set("page", String(page));
     url.searchParams.set("region", "US");
     url.searchParams.set("sort_by", "popularity.desc");
-    url.searchParams.set("with_release_type", String(digitalReleaseType));
+    url.searchParams.set("with_release_type", String(releaseType));
     url.searchParams.set("release_date.gte", input.weekStart);
     url.searchParams.set("release_date.lte", input.weekEnd);
 
@@ -338,6 +396,13 @@ export class TmdbClient {
 
   private fetchReleaseDates(movieId: number): Promise<TmdbReleaseDatesResponse> {
     return this.fetchJson<TmdbReleaseDatesResponse>(this.url(`/3/movie/${movieId}/release_dates`));
+  }
+
+  private async fetchMovieStreamingProviders(movieId: number): Promise<ReleaseProviderSource[]> {
+    const response = await this.fetchJson<TmdbWatchProvidersResponse>(
+      this.url(`/3/movie/${movieId}/watch/providers`),
+    );
+    return normalizeMovieStreamingProviders(response);
   }
 
   getMovieDetail(movieId: number): Promise<TmdbMovieDetailResponse> {
@@ -419,7 +484,7 @@ export class TmdbClient {
       posterUrl,
       releaseDate: item.releaseDate,
       sourceId: 0,
-      sourceName: "Digital release",
+      sourceName: item.releaseDateSource === "new-release-fallback" ? "New release" : "Digital release",
       sourceType: "digital",
       seasonNumber: null,
       isOriginal: false,
@@ -427,15 +492,19 @@ export class TmdbClient {
       popularity: item.movie.popularity ?? null,
       voteAverage: item.movie.vote_average ?? null,
       voteCount: item.movie.vote_count ?? null,
-      isFeaturedDigital: isFeaturedDigitalMovie(
-        primaryReleaseDate,
-        item.movie.popularity ?? null,
-        item.movie.vote_count ?? null,
-        item.releaseDate,
-      ),
+      isFeaturedDigital:
+        item.releaseDateSource === "new-release-fallback" ||
+        isFeaturedDigitalMovie(
+          primaryReleaseDate,
+          item.movie.popularity ?? null,
+          item.movie.vote_count ?? null,
+          item.releaseDate,
+        ),
+      isDigitalDateFallback: item.releaseDateSource === "new-release-fallback",
       originalLanguage,
       isInternational: isInternationalLanguage(originalLanguage),
       isDubbed: hasDubbedCue(item.movie.title, item.movie.original_title, item.movie.overview),
+      sources: item.streamingProviders,
     };
   }
 
@@ -537,6 +606,46 @@ function uniqueTvAirings(airings: TvEpisodeAiring[]): TvEpisodeAiring[] {
   return [...byKey.values()];
 }
 
+function normalizeMovieStreamingProviders(response: TmdbWatchProvidersResponse): ReleaseProviderSource[] {
+  const usProviders = response.results?.US;
+  if (!usProviders) return [];
+
+  return uniqueProviderSources([
+    ...(usProviders.flatrate || []).map((provider) => providerSourceFromTmdbProvider(provider, "sub")),
+    ...(usProviders.free || []).map((provider) => providerSourceFromTmdbProvider(provider, "free")),
+    ...(usProviders.ads || []).map((provider) => providerSourceFromTmdbProvider(provider, "free")),
+  ]);
+}
+
+function providerSourceFromTmdbProvider(
+  provider: TmdbWatchProvider,
+  sourceType: ReleaseProviderSource["sourceType"],
+): ReleaseProviderSource {
+  return {
+    key: providerKeyFromName(provider.provider_name),
+    name: provider.provider_name,
+    sourceId: provider.provider_id,
+    sourceType,
+    releaseSource: "tmdb",
+  };
+}
+
+function uniqueProviderSources(sources: ReleaseProviderSource[]): ReleaseProviderSource[] {
+  const byKey = new Map<string, ReleaseProviderSource>();
+  for (const source of sources) {
+    byKey.set(source.key, source);
+  }
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function providerKeyFromName(value: string): string {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const aliases: Record<string, string> = {
+    netflixstandardwithads: "netflix",
+  };
+  return `provider:${aliases[slug] || slug || "unknown"}`;
+}
+
 function tvSourceFromNetworks(networks: TmdbNetwork[] = []): {
   sourceId: number;
   sourceName: string;
@@ -597,17 +706,39 @@ function findDigitalReleaseDate(
   response: TmdbReleaseDatesResponse,
   weekStart: string,
   weekEnd: string,
-): string | null {
+  fallbackReleaseDate: string | null,
+): TmdbMovieReleaseDateMatch | null {
   const usReleaseDates =
     response.results?.find((result) => result.iso_3166_1 === "US")?.release_dates || [];
 
-  const digitalDates = usReleaseDates
+  const originalDigitalDate = usReleaseDates
     .filter((releaseDate) => releaseDate.type === digitalReleaseType)
     .map((releaseDate) => releaseDate.release_date.slice(0, 10))
-    .filter((releaseDate) => releaseDate >= weekStart && releaseDate <= weekEnd)
-    .sort();
+    .filter(Boolean)
+    .sort()[0];
 
-  return digitalDates[0] || null;
+  if (originalDigitalDate) {
+    if (originalDigitalDate < weekStart || originalDigitalDate > weekEnd) return null;
+    return { date: originalDigitalDate, source: "digital" };
+  }
+
+  if (!isDateInWindow(fallbackReleaseDate, weekStart, weekEnd)) return null;
+
+  const originalFallbackDate = usReleaseDates
+    .filter((releaseDate) => newReleaseFallbackTypes.includes(releaseDate.type))
+    .map((releaseDate) => releaseDate.release_date.slice(0, 10))
+    .filter((releaseDate) => releaseDate >= weekStart && releaseDate <= weekEnd)
+    .sort()[0];
+
+  return originalFallbackDate
+    ? { date: originalFallbackDate, source: "new-release-fallback" }
+    : null;
+}
+
+function isDateInWindow(value: string | null | undefined, weekStart: string, weekEnd: string): boolean {
+  if (!value) return false;
+  const dateOnly = value.slice(0, 10);
+  return dateOnly >= weekStart && dateOnly <= weekEnd;
 }
 
 function findPrimaryReleaseDate(

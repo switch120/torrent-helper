@@ -138,6 +138,15 @@ export function releaseSources(release: DigitalRelease): ReleaseProviderSource[]
   return [providerSourceFromRelease(release)];
 }
 
+export function releaseStreamingSources(release: DigitalRelease): ReleaseProviderSource[] {
+  if (!release.sources?.length) return [];
+  return uniqueProviderSources(
+    release.sources
+      .map(normalizeProviderSource)
+      .filter((source) => source.sourceType !== "digital"),
+  );
+}
+
 export function showKey(release: Pick<DigitalRelease, "mediaType" | "tmdbId" | "watchmodeId" | "title">): string {
   if (release.mediaType !== "tv") return "";
   if (release.tmdbId) return `tmdb:${release.tmdbId}`;

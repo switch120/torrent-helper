@@ -151,8 +151,11 @@
                     <div class="source-line">
                       @if (release.releaseKind === "digital") {
                         <span class="digital-chip" [class.is-featured]="release.isFeaturedDigital">
-                          {{ release.isFeaturedDigital ? "Featured digital" : "Digital release" }}
+                          {{ release.isDigitalDateFallback ? "New release" : release.isFeaturedDigital ? "Featured digital" : "Digital release" }}
                         </span>
+                        @for (source of releaseStreamingSources(release); track source.key) {
+                          <span class="source-chip is-static">{{ source.name }}</span>
+                        }
                       } @else {
                         @for (source of releaseSources(release); track source.key) {
                           <span class="source-chip is-static">{{ source.name }}</span>

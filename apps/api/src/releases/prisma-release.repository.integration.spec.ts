@@ -173,7 +173,7 @@ describeIfDatabase("PrismaReleaseRepository integration", () => {
       weekEnd: "2026-06-14",
       fetchedAt: new Date("2026-05-16T12:00:00.000Z"),
       expiresAt: new Date("2026-05-16T18:00:00.000Z"),
-      raw: { results: [{ id: 100 }] },
+      raw: { digitalDatePolicy: "original-us-digital-with-streaming-providers-v1", results: [{ id: 100 }] },
       releases: [
         {
           eventId: "tmdb:digital:100:2026-06-10",

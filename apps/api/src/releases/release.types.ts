@@ -3,6 +3,14 @@ export type ReleaseSourceName = "watchmode" | "tmdb";
 export type ReleaseKind = "streaming" | "digital";
 export type ReleaseSourceType = "sub" | "purchase" | "free" | "tve" | "digital" | "unknown";
 
+export type ReleaseProviderSource = {
+  key: string;
+  name: string;
+  sourceId: number;
+  sourceType: ReleaseSourceType;
+  releaseSource: ReleaseSourceName;
+};
+
 export type NormalizedRelease = {
   eventId: string;
   watchmodeId: number;
@@ -28,9 +36,11 @@ export type NormalizedRelease = {
   voteAverage?: number | null;
   voteCount?: number | null;
   isFeaturedDigital?: boolean;
+  isDigitalDateFallback?: boolean;
   originalLanguage?: string | null;
   isInternational?: boolean;
   isDubbed?: boolean;
+  sources?: ReleaseProviderSource[];
 };
 
 export type ReleaseCacheStatus = "fresh" | "stale";

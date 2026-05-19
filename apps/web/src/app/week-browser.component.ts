@@ -3,7 +3,7 @@ import { Component, OnInit, inject } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import { ReleaseWeekStore } from "./release-week.store";
-import { addWeeks, canHideShow, formatTmdbRating, normalizeWeekStartParam, ratingToneClass, releaseKey, releaseSources, showKey, startOfIsoWeek } from "./release-week.utils";
+import { addWeeks, canHideShow, formatTmdbRating, normalizeWeekStartParam, ratingToneClass, releaseKey, releaseSources, releaseStreamingSources, showKey, startOfIsoWeek } from "./release-week.utils";
 import type { DigitalRelease } from "./release.models";
 import { modalRoute } from "./route-modal.utils";
 
@@ -22,6 +22,7 @@ export class WeekBrowserComponent implements OnInit {
   readonly modalRoute = modalRoute;
   readonly ratingToneClass = ratingToneClass;
   readonly releaseSources = releaseSources;
+  readonly releaseStreamingSources = releaseStreamingSources;
 
   ngOnInit(): void {
     const weekStart = normalizeWeekStartParam(this.route.snapshot.queryParamMap.get("week")) ?? this.store.weekStart();

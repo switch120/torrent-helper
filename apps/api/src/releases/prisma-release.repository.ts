@@ -14,6 +14,8 @@ import type { FetchCacheSnapshot, NormalizedRelease } from "./release.types";
 import type { ReleaseDetail } from "./release-detail.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
+const tmdbDigitalDatePolicy = "original-us-digital-with-streaming-providers-v1";
+
 @Injectable()
 export class PrismaReleaseRepository implements ReleaseRepository {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -179,6 +181,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
     });
 
     if (!cache) return null;
+    const rawCache = isRecord(cache.rawResponse) ? cache.rawResponse : {};
+    if (rawCache.digitalDatePolicy !== tmdbDigitalDatePolicy) return null;
+
     const missingLanguageCount = await this.prisma.tmdbDigitalMovie.count({
       where: {
         releaseDate: {
@@ -229,7 +234,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         posterUrl: movie.posterUrl,
         releaseDate: toDateOnly(movie.releaseDate),
         sourceId: 0,
-        sourceName: "Digital release",
+        sourceName: raw.isDigitalDateFallback === true ? "New release" : "Digital release",
         sourceType: "digital",
         seasonNumber: null,
         isOriginal: Boolean(raw.isOriginal),
@@ -238,9 +243,11 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         voteCount: movie.voteCount,
         voteAverage: movie.voteAverage,
         isFeaturedDigital: movie.isFeaturedDigital,
+        isDigitalDateFallback: raw.isDigitalDateFallback === true,
         originalLanguage: movie.originalLanguage,
         isInternational: movie.isInternational,
         isDubbed: movie.isDubbed,
+        sources: normalizeReleaseSources(raw.sources),
       };
     });
   }
@@ -461,6 +468,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
       return airing ? mapTmdbTvAiring(airing) : null;
     }
 
+    const raw = isRecord(movie.raw) ? movie.raw : {};
     return {
       eventId: movie.eventId,
       watchmodeId: movie.tmdbId,
@@ -475,7 +483,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
       posterUrl: movie.posterUrl,
       releaseDate: toDateOnly(movie.releaseDate),
       sourceId: 0,
-      sourceName: "Digital release",
+      sourceName: raw.isDigitalDateFallback === true ? "New release" : "Digital release",
       sourceType: "digital",
       seasonNumber: null,
       isOriginal: false,
@@ -484,9 +492,11 @@ export class PrismaReleaseRepository implements ReleaseRepository {
       voteAverage: movie.voteAverage,
       voteCount: movie.voteCount,
       isFeaturedDigital: movie.isFeaturedDigital,
+      isDigitalDateFallback: raw.isDigitalDateFallback === true,
       originalLanguage: movie.originalLanguage,
       isInternational: movie.isInternational,
       isDubbed: movie.isDubbed,
+      sources: normalizeReleaseSources(raw.sources),
     };
   }
 
@@ -644,6 +654,23 @@ function toDateOnly(value: Date): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeReleaseSources(value: unknown): NormalizedRelease["sources"] {
+  if (!Array.isArray(value)) return undefined;
+
+  const sources = value
+    .filter(isRecord)
+    .map((source): NonNullable<NormalizedRelease["sources"]>[number] => ({
+      key: typeof source.key === "string" ? source.key : "",
+      name: typeof source.name === "string" ? source.name : "",
+      sourceId: typeof source.sourceId === "number" ? source.sourceId : 0,
+      sourceType: typeof source.sourceType === "string" ? normalizeSourceType(source.sourceType) : "unknown",
+      releaseSource: source.releaseSource === "tmdb" ? "tmdb" : "watchmode",
+    }))
+    .filter((source) => source.key && source.name);
+
+  return sources.length > 0 ? sources : undefined;
 }
 
 function normalizeSourceType(value: string): NormalizedRelease["sourceType"] {
