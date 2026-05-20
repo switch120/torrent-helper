@@ -500,7 +500,7 @@ export class TmdbClient {
 
     return {
       eventId: `tmdb:digital:${item.movie.id}:${item.releaseDate}`,
-      watchmodeId: item.movie.id,
+      sourceTitleId: item.movie.id,
       releaseSource: "tmdb",
       releaseKind: "digital",
       title: item.movie.title || item.movie.original_title || `TMDB ${item.movie.id}`,
@@ -555,7 +555,7 @@ export class TmdbClient {
         seasonNumber ?? "none",
         episodeNumber ?? "none",
       ].join(":"),
-      watchmodeId: item.show.id,
+      sourceTitleId: item.show.id,
       releaseSource: "tmdb",
       releaseKind: "streaming",
       title: item.show.name || item.show.original_name || item.detail.name || item.detail.original_name || `TMDB ${item.show.id}`,

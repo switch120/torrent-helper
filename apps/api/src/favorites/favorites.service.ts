@@ -76,7 +76,7 @@ export class FavoritesService {
       return {
         showKey,
         tmdbId: release.tmdbId,
-        watchmodeId: release.watchmodeId,
+        sourceTitleId: release.sourceTitleId,
         title: release.title,
         posterUrl: release.posterUrl,
         backdropUrl: null,
@@ -103,7 +103,7 @@ export class FavoritesService {
     return {
       showKey,
       tmdbId: detail.id || release.tmdbId,
-      watchmodeId: release.watchmodeId,
+      sourceTitleId: release.sourceTitleId,
       title: detail.name || detail.original_name || release.title,
       posterUrl: imageUrl(detail.poster_path, posterBaseUrl) || release.posterUrl,
       backdropUrl: imageUrl(detail.backdrop_path, backdropBaseUrl),
@@ -132,7 +132,7 @@ function toFavoriteWrite(snapshot: FavoriteSnapshot) {
   return {
     showKey: snapshot.showKey,
     tmdbId: snapshot.tmdbId,
-    watchmodeId: snapshot.watchmodeId,
+    sourceTitleId: snapshot.sourceTitleId,
     title: snapshot.title,
     posterUrl: snapshot.posterUrl,
     backdropUrl: snapshot.backdropUrl,
@@ -153,14 +153,13 @@ function toFavoriteWrite(snapshot: FavoriteSnapshot) {
 
 function favoriteShowKey(release: NormalizedRelease): string {
   if (release.tmdbId) return `tmdb:${release.tmdbId}`;
-  if (release.watchmodeId) return `watchmode:${release.watchmodeId}`;
   return `title:${release.title.toLowerCase().trim()}`;
 }
 
 function mapFavoriteShow(record: {
   showKey: string;
   tmdbId: number | null;
-  watchmodeId: number | null;
+  sourceTitleId: number | null;
   title: string;
   posterUrl: string | null;
   backdropUrl: string | null;
@@ -179,7 +178,7 @@ function mapFavoriteShow(record: {
   return {
     showKey: record.showKey,
     tmdbId: record.tmdbId,
-    watchmodeId: record.watchmodeId,
+    sourceTitleId: record.sourceTitleId,
     title: record.title,
     posterUrl: record.posterUrl,
     backdropUrl: record.backdropUrl,

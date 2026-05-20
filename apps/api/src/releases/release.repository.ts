@@ -1,6 +1,5 @@
-import type { FetchCacheSnapshot, NormalizedRelease } from "./release.types";
+import type { NormalizedRelease } from "./release.types";
 import type { ReleaseDetail } from "./release-detail.types";
-import type { WatchModeQuota } from "./watchmode.client";
 import type { DownloadHistoryStatus } from "../downloads/download.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
@@ -19,18 +18,6 @@ export type DownloadRecordSnapshot = {
   createdAt: Date;
   updatedAt: Date;
   completedAt: Date | null;
-};
-
-export type SaveWatchModeFetchInput = {
-  cacheKey: string;
-  requestedStartDate: string;
-  requestedEndDate: string;
-  coveredStartDate: string;
-  coveredEndDate: string;
-  fetchedAt: Date;
-  releases: NormalizedRelease[];
-  raw: unknown;
-  quota: WatchModeQuota;
 };
 
 export type TmdbDigitalWeekCacheSnapshot = {
@@ -60,15 +47,6 @@ export type TorrentSearchCacheSnapshot = {
 };
 
 export interface ReleaseRepository {
-  getFetchCoveringWeek(
-    weekStart: string,
-    weekEnd: string,
-  ): Promise<FetchCacheSnapshot | null>;
-  getWeekReleases(
-    weekStart: string,
-    weekEnd: string,
-  ): Promise<NormalizedRelease[]>;
-  saveWatchModeFetch(input: SaveWatchModeFetchInput): Promise<void>;
   getTmdbDigitalWeekCache(weekStart: string): Promise<TmdbDigitalWeekCacheSnapshot | null>;
   getTmdbDigitalMovies(
     weekStart: string,

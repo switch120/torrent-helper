@@ -94,8 +94,8 @@ describe("release week utilities", () => {
       movies: [
         {
           eventId: "movie",
-          watchmodeId: 1,
-          releaseSource: "watchmode",
+          sourceTitleId: 1,
+          releaseSource: "tmdb",
           releaseKind: "streaming",
           title: "Movie",
           titleType: "movie",
@@ -113,7 +113,7 @@ describe("release week utilities", () => {
         },
         {
           eventId: "digital-movie",
-          watchmodeId: 100,
+          sourceTitleId: 100,
           releaseSource: "tmdb",
           releaseKind: "digital",
           title: "Digital Movie",
@@ -134,8 +134,8 @@ describe("release week utilities", () => {
       tv: [
         {
           eventId: "tv",
-          watchmodeId: 2,
-          releaseSource: "watchmode",
+          sourceTitleId: 2,
+          releaseSource: "tmdb",
           releaseKind: "streaming",
           title: "Series",
           titleType: "tv_series",
@@ -161,9 +161,9 @@ describe("release week utilities", () => {
   });
 
   it("normalizes provider filters, counts consolidated TV rows, and keeps seed labels selected", () => {
-    const appleTvWatchMode = tvRelease({
-      eventId: "watchmode-apple",
-      releaseSource: "watchmode",
+    const appleTvSource = tvRelease({
+      eventId: "tmdb-apple",
+      releaseSource: "tmdb",
       sourceId: 371,
       sourceName: "AppleTV+",
       title: "For All Mankind",
@@ -184,12 +184,12 @@ describe("release week utilities", () => {
       title: "The Bear",
       tmdbId: 136315,
     });
-    const response = responseWith({ tv: [appleTvWatchMode, appleTvTmdb, hulu] });
+    const response = responseWith({ tv: [appleTvSource, appleTvTmdb, hulu] });
 
     expect(
       collectProviderFilters(response, new Set(DEFAULT_SELECTED_PROVIDERS.map((provider) => provider.key)), [
         ...DEFAULT_SELECTED_PROVIDERS,
-        { key: "watchmode:999", name: "AMC", hidden: false },
+        { key: "tmdb:999", name: "AMC", hidden: false },
       ]).filter((provider) => ["provider:appletv", "provider:hulu", "provider:amc"].includes(provider.key)),
     ).toEqual([
       { key: "provider:appletv", name: "Apple TV+", hidden: false, selected: true, count: 1, disabled: false },
@@ -363,8 +363,8 @@ describe("release week utilities", () => {
   it("hides selected TV shows behind the section counter", () => {
     const show = {
       eventId: "tv",
-      watchmodeId: 2,
-      releaseSource: "watchmode" as const,
+      sourceTitleId: 2,
+      releaseSource: "tmdb" as const,
       releaseKind: "streaming" as const,
       title: "Series",
       titleType: "tv_series",
@@ -423,8 +423,8 @@ describe("release week utilities", () => {
   it("filters TV releases to favorite shows when requested", () => {
     const favoriteShow = {
       eventId: "favorite-tv",
-      watchmodeId: 2,
-      releaseSource: "watchmode" as const,
+      sourceTitleId: 2,
+      releaseSource: "tmdb" as const,
       releaseKind: "streaming" as const,
       title: "Favorite",
       titleType: "tv_series",
@@ -445,7 +445,7 @@ describe("release week utilities", () => {
       eventId: "other-tv",
       title: "Other",
       tmdbId: 21,
-      watchmodeId: 3,
+      sourceTitleId: 3,
     };
     const response: ReleaseWeekResponse = {
       weekStart: "2026-05-11",
@@ -472,8 +472,8 @@ describe("release week utilities", () => {
   it("filters provider-backed TV to the selected provider allow-list", () => {
     const netflixMovie = {
       eventId: "movie-netflix",
-      watchmodeId: 1,
-      releaseSource: "watchmode" as const,
+      sourceTitleId: 1,
+      releaseSource: "tmdb" as const,
       releaseKind: "streaming" as const,
       title: "Netflix Movie",
       titleType: "movie",
@@ -491,8 +491,8 @@ describe("release week utilities", () => {
     };
     const huluShow = {
       eventId: "tv-hulu",
-      watchmodeId: 2,
-      releaseSource: "watchmode" as const,
+      sourceTitleId: 2,
+      releaseSource: "tmdb" as const,
       releaseKind: "streaming" as const,
       title: "Hulu Show",
       titleType: "tv_series",
@@ -560,7 +560,7 @@ describe("release week utilities", () => {
   it("describes cache state quietly", () => {
     expect(cacheLabel("idle", null)).toBe("Choose a week");
     expect(cacheLabel("loading", null)).toBe("Refreshing");
-    expect(cacheLabel("error", "WatchMode 401")).toBe("WatchMode 401");
+    expect(cacheLabel("error", "TMDB 401")).toBe("TMDB 401");
   });
 });
 
@@ -583,8 +583,8 @@ function responseWith(overrides: Partial<ReleaseWeekResponse>): ReleaseWeekRespo
 function tvRelease(overrides: Partial<DigitalRelease>): DigitalRelease {
   return {
     eventId: "tv",
-    watchmodeId: 2,
-    releaseSource: "watchmode",
+    sourceTitleId: 2,
+    releaseSource: "tmdb",
     releaseKind: "streaming",
     title: "Series",
     titleType: "tv_series",
@@ -607,7 +607,7 @@ function tvRelease(overrides: Partial<DigitalRelease>): DigitalRelease {
 function movieRelease(overrides: Partial<DigitalRelease>): DigitalRelease {
   return {
     eventId: "movie",
-    watchmodeId: 1,
+    sourceTitleId: 1,
     releaseSource: "tmdb",
     releaseKind: "digital",
     title: "Movie",

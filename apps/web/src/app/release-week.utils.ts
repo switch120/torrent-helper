@@ -147,10 +147,9 @@ export function releaseStreamingSources(release: DigitalRelease): ReleaseProvide
   );
 }
 
-export function showKey(release: Pick<DigitalRelease, "mediaType" | "tmdbId" | "watchmodeId" | "title">): string {
+export function showKey(release: Pick<DigitalRelease, "mediaType" | "tmdbId" | "title">): string {
   if (release.mediaType !== "tv") return "";
   if (release.tmdbId) return `tmdb:${release.tmdbId}`;
-  if (release.watchmodeId) return `watchmode:${release.watchmodeId}`;
   return `title:${release.title.toLowerCase().trim()}`;
 }
 
@@ -159,7 +158,7 @@ export function isProviderFilterable(release: DigitalRelease): boolean {
 }
 
 export function canHideShow(
-  release: Pick<DigitalRelease, "mediaType" | "tmdbId" | "watchmodeId" | "title">,
+  release: Pick<DigitalRelease, "mediaType" | "tmdbId" | "title">,
   favoriteShowKeys: Set<string>,
 ): boolean {
   const key = showKey(release);

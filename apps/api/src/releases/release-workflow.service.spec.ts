@@ -163,9 +163,6 @@ function createService(
 
 function createRepository(overrides: Partial<ReleaseRepository> = {}): ReleaseRepository {
   return {
-    getFetchCoveringWeek: vi.fn(),
-    getWeekReleases: vi.fn(),
-    saveWatchModeFetch: vi.fn(),
     getTmdbDigitalWeekCache: vi.fn(),
     getTmdbDigitalMovies: vi.fn(),
     saveTmdbDigitalWeek: vi.fn(),
@@ -198,7 +195,7 @@ function createProwlarr(overrides: Record<string, unknown> = {}) {
 function release(overrides: Partial<NormalizedRelease> = {}): NormalizedRelease {
   return {
     eventId: "event-1",
-    watchmodeId: 1,
+    sourceTitleId: 1,
     releaseSource: "tmdb",
     releaseKind: "digital",
     title: "Movie",

@@ -4,7 +4,7 @@ import { favoriteSortLabel, filterFavoriteShows, sortFavoriteShows } from "./fav
 
 const show = (input: Partial<FavoriteShowSummary> & Pick<FavoriteShowSummary, "showKey" | "title">): FavoriteShowSummary => ({
   tmdbId: null,
-  watchmodeId: null,
+  sourceTitleId: null,
   posterUrl: null,
   backdropUrl: null,
   overview: null,

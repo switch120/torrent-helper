@@ -10,12 +10,11 @@ import { FavoritesService } from "./favorites/favorites.service";
 import { HealthController } from "./health.controller";
 import { PrismaService } from "./prisma/prisma.service";
 import { ReleasesController } from "./releases/releases.controller";
-import { PROWLARR_CLIENT, RELEASE_REPOSITORY, TMDB_CLIENT, TRANSMISSION_CLIENT, WATCHMODE_CLIENT } from "./releases/release.tokens";
+import { PROWLARR_CLIENT, RELEASE_REPOSITORY, TMDB_CLIENT, TRANSMISSION_CLIENT } from "./releases/release.tokens";
 import { PrismaReleaseRepository } from "./releases/prisma-release.repository";
 import { ReleaseWorkflowService } from "./releases/release-workflow.service";
 import { ReleasesService } from "./releases/releases.service";
 import { TmdbClient } from "./releases/tmdb.client";
-import { WatchModeClient } from "./releases/watchmode.client";
 import { ProwlarrClient } from "./torrents/prowlarr.client";
 import { UserSettingsController } from "./users/user-settings.controller";
 import { UserSettingsService } from "./users/user-settings.service";
@@ -34,13 +33,6 @@ import { UserSettingsService } from "./users/user-settings.service";
     {
       provide: RELEASE_REPOSITORY,
       useClass: PrismaReleaseRepository,
-    },
-    {
-      provide: WATCHMODE_CLIENT,
-      useFactory: () =>
-        new WatchModeClient({
-          apiKey: process.env.WATCHMODE_API_KEY,
-        }),
     },
     {
       provide: TMDB_CLIENT,

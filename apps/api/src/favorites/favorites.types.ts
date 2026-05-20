@@ -17,7 +17,7 @@ export type FavoriteReleaseContext = {
 export type FavoriteShowSummary = {
   showKey: string;
   tmdbId: number | null;
-  watchmodeId: number | null;
+  sourceTitleId: number | null;
   title: string;
   posterUrl: string | null;
   backdropUrl: string | null;

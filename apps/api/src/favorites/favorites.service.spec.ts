@@ -9,7 +9,7 @@ describe("FavoritesService", () => {
         upsert: vi.fn().mockResolvedValue({
           showKey: "tmdb:100",
           tmdbId: 100,
-          watchmodeId: 500,
+          sourceTitleId: 500,
           title: "Example Show",
           posterUrl: "poster",
           backdropUrl: "backdrop",
@@ -33,7 +33,7 @@ describe("FavoritesService", () => {
         mediaType: "tv",
         title: "Example Show",
         tmdbId: 100,
-        watchmodeId: 500,
+        sourceTitleId: 500,
         posterUrl: "release-poster",
         sourceName: "Hulu",
         releaseDate: "2026-05-01",

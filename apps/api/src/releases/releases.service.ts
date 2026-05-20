@@ -1,10 +1,9 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { getCacheDecision, getNextExpiry } from "./cache-policy";
-import { RELEASE_REPOSITORY, TMDB_CLIENT, WATCHMODE_CLIENT } from "./release.tokens";
+import { RELEASE_REPOSITORY, TMDB_CLIENT } from "./release.tokens";
 import type { ReleaseRepository } from "./release.repository";
 import type { FetchCacheSnapshot, NormalizedRelease, ReleaseWeekResponse } from "./release.types";
 import type { TmdbClient } from "./tmdb.client";
-import type { WatchModeClient } from "./watchmode.client";
 import { buildWeekWindow } from "./week.utils";
 
 type Clock = () => Date;
@@ -15,7 +14,6 @@ export class ReleasesService {
 
   constructor(
     @Inject(RELEASE_REPOSITORY) private readonly repository: ReleaseRepository,
-    @Inject(WATCHMODE_CLIENT) private readonly watchMode: Pick<WatchModeClient, "getReleases">,
     @Inject(TMDB_CLIENT) private readonly tmdb: Pick<TmdbClient, "isConfigured" | "getDigitalMovieReleases" | "getTvAirings">,
     private readonly clock: Clock = () => new Date(),
   ) {}
@@ -36,96 +34,31 @@ export class ReleasesService {
     const now = this.clock();
     const tmdbConfigured = this.tmdb.isConfigured();
 
-    if (tmdbConfigured) {
-      const tmdbWarning = await this.ensureTmdbDigitalMovies(window, now, forceRefresh);
-      const tmdbTvWarning = await this.ensureTmdbTvAirings(window, now, forceRefresh);
-      const releases = [
-        ...(await this.repository.getTmdbDigitalMovies(window.weekStart, window.weekEnd)),
-        ...(await this.repository.getTmdbTvAirings(window.weekStart, window.weekEnd)),
-      ];
-      const cache = await this.getTmdbCacheSnapshot(window.weekStart, window.weekEnd);
-
+    if (!tmdbConfigured) {
       return this.toResponse(
         window.weekStart,
         window.weekEnd,
-        dedupeReleases(releases),
-        cache,
-        joinWarnings(tmdbWarning, tmdbTvWarning),
+        [],
+        null,
+        "TMDB_API_KEY or TMDB_READ_ACCESS_TOKEN is required to fetch release data.",
       );
     }
 
-    const cache = await this.repository.getFetchCoveringWeek(window.weekStart, window.weekEnd);
-    let warning: string | null = null;
-    let responseCache = cache;
-    const decision = getCacheDecision({
-      weekStart: window.weekStart,
-      now,
-      cache,
-      forceRefresh,
-    });
-
-    if (decision.shouldFetch) {
-      try {
-        await this.queueRefresh(() => this.fetchAndCache(window, now, forceRefresh));
-      } catch (error) {
-        warning = error instanceof Error ? error.message : "WatchMode refresh failed.";
-        if (cache) {
-          responseCache = {
-            ...cache,
-            status: "stale",
-            warning,
-          };
-        }
-      }
-    }
-
+    const tmdbWarning = await this.ensureTmdbDigitalMovies(window, now, forceRefresh);
+    const tmdbTvWarning = await this.ensureTmdbTvAirings(window, now, forceRefresh);
     const releases = [
-      ...(await this.repository.getWeekReleases(window.weekStart, window.weekEnd)),
+      ...(await this.repository.getTmdbDigitalMovies(window.weekStart, window.weekEnd)),
+      ...(await this.repository.getTmdbTvAirings(window.weekStart, window.weekEnd)),
     ];
-    const freshCache = await this.repository.getFetchCoveringWeek(window.weekStart, window.weekEnd);
+    const cache = await this.getTmdbCacheSnapshot(window.weekStart, window.weekEnd);
+
     return this.toResponse(
       window.weekStart,
       window.weekEnd,
       dedupeReleases(releases),
-      responseCache?.status === "stale" ? responseCache : freshCache || responseCache,
-      warning,
+      cache,
+      joinWarnings(tmdbWarning, tmdbTvWarning),
     );
-  }
-
-  private async fetchAndCache(
-    window: ReturnType<typeof buildWeekWindow>,
-    now: Date,
-    forceRefresh: boolean,
-  ): Promise<void> {
-    if (!forceRefresh) {
-      const cache = await this.repository.getFetchCoveringWeek(window.weekStart, window.weekEnd);
-      const decision = getCacheDecision({
-        weekStart: window.weekStart,
-        now,
-        cache,
-        forceRefresh: false,
-      });
-
-      if (!decision.shouldFetch) return;
-    }
-
-    const result = await this.watchMode.getReleases({
-      startDate: window.watchModeStart,
-      endDate: window.watchModeEnd,
-    });
-    const coverage = getFetchCoverage(window, result.releases);
-
-    await this.repository.saveWatchModeFetch({
-      cacheKey: `watchmode:releases:${window.watchModeStart}:${window.watchModeEnd}`,
-      requestedStartDate: window.weekStart,
-      requestedEndDate: window.weekEnd,
-      coveredStartDate: coverage.coveredStartDate,
-      coveredEndDate: coverage.coveredEndDate,
-      fetchedAt: now,
-      releases: result.releases,
-      raw: result.raw,
-      quota: result.quota,
-    });
   }
 
   private buildWindow(weekStartInput: string): ReturnType<typeof buildWeekWindow> {
@@ -343,7 +276,7 @@ function dedupeReleases(releases: NormalizedRelease[]): NormalizedRelease[] {
 function dedupeKey(release: NormalizedRelease): string {
   const base = [
     release.mediaType,
-    release.tmdbId || release.watchmodeId || release.title.toLowerCase(),
+    release.tmdbId || release.sourceTitleId || release.title.toLowerCase(),
     release.releaseDate,
     release.seasonNumber ?? "none",
     release.episodeNumber ?? "none",
@@ -369,30 +302,4 @@ function normalizeSourceName(value: string): string {
 
 function joinWarnings(...warnings: Array<string | null>): string | null {
   return [...new Set(warnings.filter(Boolean))].join(" ") || null;
-}
-
-function getFetchCoverage(
-  window: ReturnType<typeof buildWeekWindow>,
-  releases: NormalizedRelease[],
-): { coveredStartDate: string; coveredEndDate: string } {
-  const releaseWeeks = releases.map((release) => buildWeekWindow(release.releaseDate));
-
-  return {
-    coveredStartDate: minDate([
-      window.weekStart,
-      ...releaseWeeks.map((releaseWeek) => releaseWeek.weekStart),
-    ]),
-    coveredEndDate: maxDate([
-      window.weekEnd,
-      ...releaseWeeks.map((releaseWeek) => releaseWeek.weekEnd),
-    ]),
-  };
-}
-
-function minDate(values: string[]): string {
-  return values.reduce((earliest, value) => (value < earliest ? value : earliest));
-}
-
-function maxDate(values: string[]): string {
-  return values.reduce((latest, value) => (value > latest ? value : latest));
 }

@@ -8,7 +8,7 @@ This project uses the [haugene/transmission-openvpn](https://hub.docker.com/r/ha
 
 New installs persist haugene/Transmission configuration in the `trans-config` volume mounted at `/config`, and downloads remain on the `trans-data` NFS-backed volume mounted at `/data`. Existing installs may still have legacy Transmission configuration at `/data/transmission-home`; do not auto-copy that folder from NFS during routine upgrades.
 
-The release hub is an additive local web app. It runs a NestJS API, Angular UI, PostgreSQL cache, and optional Prowlarr integration in separate Docker services. TMDB is the primary release source for movie digital dates and TV episode airings; WatchMode remains a fallback/source adapter.
+The release hub is an additive local web app. It runs a NestJS API, Angular UI, PostgreSQL cache, and optional Prowlarr integration in separate Docker services. TMDB is the release source for movie digital dates, provider streaming context, TV episode airings, ratings, details, and favorite-show snapshots.
 
 ### Getting Started
 * Copy `.env.example` to `.env`.
@@ -17,7 +17,6 @@ The release hub is an additive local web app. It runs a NestJS API, Angular UI, 
 * Add Auth0 config to `.env` if you want the browser app to load protected release data.
 * Add `PROWLARR_API_KEY` after configuring Prowlarr indexers if you want torrent search.
 * Add `OPENAI_API_KEY` only if you want optional torrent result reranking, then set `OPENAI_TORRENT_RERANK_ENABLED=true`. Torrent titles and metadata are sent to OpenAI; magnet links are not sent.
-* Add `WATCHMODE_API_KEY` only if you want the legacy WatchMode fallback adapter available.
 * Confirm the `trans-data` NFS volume in `docker-compose.yml` points at the intended storage location.
 * If you need extra haugene/OpenVPN environment variables, add them explicitly under `torrentHost.environment`; the VPN container does not receive the full `.env` file.
 * Review the [haugene documentation](https://haugene.github.io/docker-transmission-openvpn/) before changing provider-specific VPN settings.
@@ -62,6 +61,10 @@ While `releaseApi` is running, a NestJS cron checks Transmission every 30 second
 ### Digital Release Hub
 The release hub lets you choose a Monday-Sunday week and view cached digital releases grouped into Movies and TV. TMDB powers the primary weekly surface: original digital movie dates, provider streaming context, TV airings, details, ratings, language flags, and favorite-show snapshots. The app stores release snapshots, normalized release rows, user settings, favorites, torrent searches, and download history in the local `release-db18` Postgres volume, not on the NFS-backed Transmission data volume.
 
+<p>
+  <img src="docs/images/release-week-browser.png" alt="Release hub weekly browser showing movie and TV digital releases" width="900">
+</p>
+
 Cache behavior:
 * TMDB movie and TV weeks are cached separately and merged into the Movies and TV sections.
 * TMDB digital movies with a recent primary release date plus a popularity or vote-count signal are ranked first and labeled `Featured digital`; older catalog/re-release rows stay lower or are excluded when they are not the original digital date.
@@ -69,7 +72,7 @@ Cache behavior:
 * Past weeks freeze after a successful fetch.
 * The current week refreshes after 24 hours.
 * Future weeks refresh after 6 hours or when you click refresh.
-* If TMDB or WatchMode fails and cached data exists, the API returns stale cached data with a warning.
+* If TMDB fails and cached data exists, the API returns stale cached data with a warning.
 * TMDB 429 and transient server errors are retried with backoff before surfacing a warning.
 
 Provider filters:
@@ -77,11 +80,23 @@ Provider filters:
 * Selected providers, hidden shows, show-only-favorites, and favorites are stored per Auth0 user in Postgres.
 * The seeded provider list is Apple TV+, Netflix, Max, Disney+, Hulu, Prime, Paramount+, Peacock, HBO, and STARZ.
 
+<p>
+  <img src="docs/images/favorite-shows-snapshot.png" alt="Favorite shows snapshot drawer with show status, last episode, next episode, and release context" width="900">
+</p>
+
 Torrent flow:
 * Torrent searches use your configured Prowlarr/Torznab indexers only. The app does not scrape public torrent sites directly.
 * Adding a torrent requires an explicit magnet selection and a `/data` download directory.
 * Download history is stored per user so duplicate magnet links can be warned on later.
 * OpenAI reranking is optional and disabled by default.
+
+<p>
+  <img src="docs/images/release-detail-torrent-results.png" alt="Release detail drawer with cast, metadata, and torrent search results" width="900">
+</p>
+
+<p>
+  <img src="docs/images/add-torrent-dialog.png" alt="Add torrent dialog with quality, size, seeder and leecher counts, age, and save path" width="700">
+</p>
 
 Useful development commands:
 
@@ -118,6 +133,10 @@ The diagnostic script reports container health, `tun0` tunnel presence, Transmis
 
 ### VPN Checker Torrent
 The Downloads page can show a proxy-health card when Transmission contains the [WhatIsMyIP.net Torrent Tracker IP Checker](https://www.whatismyip.net/tools/torrent-ip-checker/). The app hides that permanent checker from the torrent list and compares its reported VPN IP with the host public IP.
+
+<p>
+  <img src="docs/images/downloads-status.png" alt="Downloads drawer showing Transmission status, transfer stats, and masked proxy health IPs" width="900">
+</p>
 
 To add the checker in a fresh setup:
 

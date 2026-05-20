@@ -1,11 +1,11 @@
 export type ReleaseMediaType = "movie" | "tv";
-export type ReleaseSourceName = "watchmode" | "tmdb";
+export type ReleaseSourceName = "tmdb";
 export type ReleaseKind = "streaming" | "digital";
 export type ReleaseSourceType = "sub" | "purchase" | "free" | "tve" | "digital" | "unknown";
 
 export type DigitalRelease = {
   eventId: string;
-  watchmodeId: number;
+  sourceTitleId: number;
   releaseSource: ReleaseSourceName;
   releaseKind: ReleaseKind;
   title: string;
@@ -250,7 +250,7 @@ export type FavoriteReleaseContext = {
 export type FavoriteShowSummary = {
   showKey: string;
   tmdbId: number | null;
-  watchmodeId: number | null;
+  sourceTitleId: number | null;
   title: string;
   posterUrl: string | null;
   backdropUrl: string | null;

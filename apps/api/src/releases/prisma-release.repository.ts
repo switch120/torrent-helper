@@ -6,11 +6,10 @@ import type {
   DownloadRecordSnapshot,
   SaveTmdbDigitalWeekInput,
   SaveTmdbTvWeekInput,
-  SaveWatchModeFetchInput,
   TmdbDigitalWeekCacheSnapshot,
   TmdbTvWeekCacheSnapshot,
 } from "./release.repository";
-import type { FetchCacheSnapshot, NormalizedRelease } from "./release.types";
+import type { NormalizedRelease } from "./release.types";
 import type { ReleaseDetail } from "./release-detail.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
@@ -19,159 +18,6 @@ const tmdbDigitalDatePolicy = "original-us-digital-with-streaming-providers-v1";
 @Injectable()
 export class PrismaReleaseRepository implements ReleaseRepository {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
-
-  async getFetchCoveringWeek(
-    weekStart: string,
-    weekEnd: string,
-  ): Promise<FetchCacheSnapshot | null> {
-    const cache = await this.prisma.watchModeFetchCache.findFirst({
-      where: {
-        coveredStartDate: { lte: toDate(weekStart) },
-        coveredEndDate: { gte: toDate(weekEnd) },
-        NOT: {
-          cacheKey: {
-            contains: "000000:",
-          },
-        },
-      },
-      orderBy: [{ fetchedAt: "desc" }, { updatedAt: "desc" }],
-    });
-
-    if (!cache) return null;
-
-    return {
-      cacheKey: cache.cacheKey,
-      coveredStartDate: toDateOnly(cache.coveredStartDate),
-      coveredEndDate: toDateOnly(cache.coveredEndDate),
-      fetchedAt: cache.fetchedAt,
-      status: cache.status === "stale" ? "stale" : "fresh",
-      warning: cache.warning,
-    };
-  }
-
-  async getWeekReleases(
-    weekStart: string,
-    weekEnd: string,
-  ): Promise<NormalizedRelease[]> {
-    const events = await this.prisma.releaseEvent.findMany({
-      where: {
-        releaseDate: {
-          gte: toDate(weekStart),
-          lte: toDate(weekEnd),
-        },
-      },
-      include: {
-        title: true,
-        source: true,
-      },
-      orderBy: [{ releaseDate: "asc" }, { title: { title: "asc" } }],
-    });
-
-    return events.map(mapReleaseEvent);
-  }
-
-  async saveWatchModeFetch(input: SaveWatchModeFetchInput): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.watchModeFetchCache.upsert({
-        where: { cacheKey: input.cacheKey },
-        create: {
-          cacheKey: input.cacheKey,
-          requestedStartDate: toDate(input.requestedStartDate),
-          requestedEndDate: toDate(input.requestedEndDate),
-          coveredStartDate: toDate(input.coveredStartDate),
-          coveredEndDate: toDate(input.coveredEndDate),
-          status: "fresh",
-          warning: null,
-          fetchedAt: input.fetchedAt,
-          rateLimitLimit: input.quota.rateLimitLimit,
-          rateLimitRemaining: input.quota.rateLimitRemaining,
-          accountQuota: input.quota.accountQuota,
-          accountQuotaUsed: input.quota.accountQuotaUsed,
-          rawResponse: input.raw as Prisma.InputJsonValue,
-        },
-        update: {
-          requestedStartDate: toDate(input.requestedStartDate),
-          requestedEndDate: toDate(input.requestedEndDate),
-          coveredStartDate: toDate(input.coveredStartDate),
-          coveredEndDate: toDate(input.coveredEndDate),
-          status: "fresh",
-          warning: null,
-          fetchedAt: input.fetchedAt,
-          rateLimitLimit: input.quota.rateLimitLimit,
-          rateLimitRemaining: input.quota.rateLimitRemaining,
-          accountQuota: input.quota.accountQuota,
-          accountQuotaUsed: input.quota.accountQuotaUsed,
-          rawResponse: input.raw as Prisma.InputJsonValue,
-        },
-      });
-
-      await tx.releaseEvent.deleteMany({
-        where: {
-          releaseDate: {
-            gte: toDate(input.coveredStartDate),
-            lte: toDate(input.coveredEndDate),
-          },
-        },
-      });
-
-      for (const release of input.releases) {
-        await tx.releaseTitle.upsert({
-          where: { watchmodeId: release.watchmodeId },
-          create: {
-            watchmodeId: release.watchmodeId,
-            title: release.title,
-            titleType: release.titleType,
-            mediaType: release.mediaType,
-            tmdbId: release.tmdbId,
-            tmdbType: release.tmdbType,
-            imdbId: release.imdbId,
-            posterUrl: release.posterUrl,
-          },
-          update: {
-            title: release.title,
-            titleType: release.titleType,
-            mediaType: release.mediaType,
-            tmdbId: release.tmdbId,
-            tmdbType: release.tmdbType,
-            imdbId: release.imdbId,
-            posterUrl: release.posterUrl,
-          },
-        });
-
-        await tx.releaseSource.upsert({
-          where: { watchmodeId: release.sourceId },
-          create: {
-            watchmodeId: release.sourceId,
-            name: release.sourceName,
-          },
-          update: {
-            name: release.sourceName,
-          },
-        });
-
-        await tx.releaseEvent.upsert({
-          where: { id: release.eventId },
-          create: {
-            id: release.eventId,
-            titleId: release.watchmodeId,
-            sourceId: release.sourceId,
-            releaseDate: toDate(release.releaseDate),
-            seasonNumber: release.seasonNumber,
-            isOriginal: release.isOriginal,
-            raw: release as Prisma.InputJsonValue,
-          },
-          update: {
-            titleId: release.watchmodeId,
-            sourceId: release.sourceId,
-            releaseDate: toDate(release.releaseDate),
-            seasonNumber: release.seasonNumber,
-            isOriginal: release.isOriginal,
-            raw: release as Prisma.InputJsonValue,
-          },
-        });
-      }
-    });
-  }
 
   async getTmdbDigitalWeekCache(
     weekStart: string,
@@ -222,7 +68,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
       const raw = isRecord(movie.raw) ? movie.raw : {};
       return {
         eventId: movie.eventId,
-        watchmodeId: movie.tmdbId,
+        sourceTitleId: movie.tmdbId,
         releaseSource: "tmdb",
         releaseKind: "digital",
         title: movie.title,
@@ -289,7 +135,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
           where: { eventId: release.eventId },
           create: {
             eventId: release.eventId,
-            tmdbId: release.tmdbId || release.watchmodeId,
+            tmdbId: release.tmdbId || release.sourceTitleId,
             title: release.title,
             posterUrl: release.posterUrl,
             releaseDate: toDate(release.releaseDate),
@@ -304,7 +150,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
             raw: release as Prisma.InputJsonValue,
           },
           update: {
-            tmdbId: release.tmdbId || release.watchmodeId,
+            tmdbId: release.tmdbId || release.sourceTitleId,
             title: release.title,
             posterUrl: release.posterUrl,
             releaseDate: toDate(release.releaseDate),
@@ -405,7 +251,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
           where: { eventId: release.eventId },
           create: {
             eventId: release.eventId,
-            tmdbId: release.tmdbId || release.watchmodeId,
+            tmdbId: release.tmdbId || release.sourceTitleId,
             title: release.title,
             titleType: release.titleType,
             posterUrl: release.posterUrl,
@@ -426,7 +272,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
             raw: release as Prisma.InputJsonValue,
           },
           update: {
-            tmdbId: release.tmdbId || release.watchmodeId,
+            tmdbId: release.tmdbId || release.sourceTitleId,
             title: release.title,
             titleType: release.titleType,
             posterUrl: release.posterUrl,
@@ -452,12 +298,6 @@ export class PrismaReleaseRepository implements ReleaseRepository {
   }
 
   async getReleaseByEventId(eventId: string): Promise<NormalizedRelease | null> {
-    const event = await this.prisma.releaseEvent.findUnique({
-      where: { id: eventId },
-      include: { title: true, source: true },
-    });
-    if (event) return mapReleaseEvent(event);
-
     const movie = await this.prisma.tmdbDigitalMovie.findUnique({
       where: { eventId },
     });
@@ -471,7 +311,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
     const raw = isRecord(movie.raw) ? movie.raw : {};
     return {
       eventId: movie.eventId,
-      watchmodeId: movie.tmdbId,
+      sourceTitleId: movie.tmdbId,
       releaseSource: "tmdb",
       releaseKind: "digital",
       title: movie.title,
@@ -666,7 +506,7 @@ function normalizeReleaseSources(value: unknown): NormalizedRelease["sources"] {
       name: typeof source.name === "string" ? source.name : "",
       sourceId: typeof source.sourceId === "number" ? source.sourceId : 0,
       sourceType: typeof source.sourceType === "string" ? normalizeSourceType(source.sourceType) : "unknown",
-      releaseSource: source.releaseSource === "tmdb" ? "tmdb" : "watchmode",
+      releaseSource: "tmdb",
     }))
     .filter((source) => source.key && source.name);
 
@@ -679,52 +519,6 @@ function normalizeSourceType(value: string): NormalizedRelease["sourceType"] {
   }
 
   return "unknown";
-}
-
-function mapReleaseEvent(event: {
-  id: string;
-  releaseDate: Date;
-  seasonNumber: number | null;
-  isOriginal: boolean;
-  raw: unknown;
-  title: {
-    watchmodeId: number;
-    title: string;
-    titleType: string;
-    mediaType: string;
-    tmdbId: number | null;
-    tmdbType: string | null;
-    imdbId: string | null;
-    posterUrl: string | null;
-  };
-  source: {
-    watchmodeId: number;
-    name: string;
-  };
-}): NormalizedRelease {
-  const raw = isRecord(event.raw) ? event.raw : {};
-  return {
-    eventId: event.id,
-    watchmodeId: event.title.watchmodeId,
-    releaseSource: raw.releaseSource === "tmdb" ? "tmdb" : "watchmode",
-    releaseKind: raw.releaseKind === "digital" ? "digital" : "streaming",
-    title: event.title.title,
-    titleType: event.title.titleType,
-    mediaType: event.title.mediaType === "tv" ? "tv" : "movie",
-    tmdbId: event.title.tmdbId,
-    tmdbType: event.title.tmdbType,
-    imdbId: event.title.imdbId,
-    posterUrl: event.title.posterUrl,
-    releaseDate: toDateOnly(event.releaseDate),
-    sourceId: event.source.watchmodeId,
-    sourceName: event.source.name,
-    sourceType: typeof raw.sourceType === "string" ? normalizeSourceType(raw.sourceType) : "unknown",
-    seasonNumber: event.seasonNumber,
-    isOriginal: event.isOriginal,
-    originalLanguage: typeof raw.originalLanguage === "string" ? raw.originalLanguage : null,
-    isInternational: raw.isInternational === true,
-    isDubbed: raw.isDubbed === true,
-  };
 }
 
 function mapTmdbTvAiring(airing: {
@@ -751,7 +545,7 @@ function mapTmdbTvAiring(airing: {
 }): NormalizedRelease {
   return {
     eventId: airing.eventId,
-    watchmodeId: airing.tmdbId,
+    sourceTitleId: airing.tmdbId,
     releaseSource: "tmdb",
     releaseKind: "streaming",
     title: airing.title,

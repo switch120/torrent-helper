@@ -104,7 +104,7 @@ describe("Prowlarr torrent normalization", () => {
 
     const result = await client.searchRelease({
       eventId: "event",
-      watchmodeId: 1,
+      sourceTitleId: 1,
       releaseSource: "tmdb",
       releaseKind: "digital",
       title: "GOAT",
@@ -239,7 +239,7 @@ describe("Prowlarr torrent normalization", () => {
 
     const result = await client.searchRelease({
       eventId: "event",
-      watchmodeId: 1,
+      sourceTitleId: 1,
       releaseSource: "tmdb",
       releaseKind: "digital",
       title: "Movie",
@@ -292,7 +292,7 @@ describe("Prowlarr torrent normalization", () => {
 function release(overrides: Partial<NormalizedRelease> = {}): NormalizedRelease {
   return {
     eventId: "event",
-    watchmodeId: 1,
+    sourceTitleId: 1,
     releaseSource: "tmdb",
     releaseKind: "digital",
     title: "Movie",

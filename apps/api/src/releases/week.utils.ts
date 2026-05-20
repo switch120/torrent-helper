@@ -3,8 +3,6 @@ export type WeekKind = "past" | "current" | "future";
 export type WeekWindow = {
   weekStart: string;
   weekEnd: string;
-  watchModeStart: number;
-  watchModeEnd: number;
 };
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -40,8 +38,6 @@ export function buildWeekWindow(value: string | Date): WeekWindow {
   return {
     weekStart: formatDateOnly(weekStartDate),
     weekEnd: formatDateOnly(weekEndDate),
-    watchModeStart: formatWatchModeDateTime(weekStartDate, "start"),
-    watchModeEnd: formatWatchModeDateTime(weekEndDate, "end"),
   };
 }
 
@@ -52,11 +48,6 @@ export function classifyWeek(weekStart: string, now = new Date()): WeekKind {
   if (selectedStart.getTime() < currentStart.getTime()) return "past";
   if (selectedStart.getTime() > currentStart.getTime()) return "future";
   return "current";
-}
-
-export function formatWatchModeDateTime(date: Date, edge: "start" | "end"): number {
-  void edge;
-  return Number(formatDateOnly(date).replaceAll("-", ""));
 }
 
 export function formatDateOnly(date: Date): string {

@@ -22,7 +22,6 @@ services:
     working_dir: /usr/src/app/apps/api
     environment:
       DATABASE_URL: "postgresql://${RELEASE_DB_USER:-release}:${RELEASE_DB_PASSWORD:-release}@releaseDb:5432/${RELEASE_DB_NAME:-release_hub}"
-      WATCHMODE_API_KEY: "${WATCHMODE_API_KEY:-}"
       TMDB_API_KEY: "${TMDB_API_KEY:-}"
       TMDB_READ_ACCESS_TOKEN: "${TMDB_READ_ACCESS_TOKEN:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"

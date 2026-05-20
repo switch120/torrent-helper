@@ -43,7 +43,7 @@ describe("UserSettingsService", () => {
       userSettings: {
         upsert: vi.fn().mockResolvedValue({
           userId: 7,
-          hiddenProviders: [{ key: "watchmode:1", name: "Provider", hidden: true }],
+          hiddenProviders: [{ key: "tmdb:1", name: "Provider", hidden: true }],
           selectedProviders: [
             { key: "provider:hulu", name: "Hulu", hidden: false },
             { key: "provider:appletv", name: "Apple TV+", hidden: true },
@@ -58,7 +58,7 @@ describe("UserSettingsService", () => {
     const service = new UserSettingsService(prisma as never);
 
     const result = await service.updateSettings(7, {
-      hiddenProviders: [{ key: "watchmode:1", name: "Provider", hidden: true }, { key: "", name: "", hidden: true }],
+      hiddenProviders: [{ key: "tmdb:1", name: "Provider", hidden: true }, { key: "", name: "", hidden: true }],
       selectedProviders: [
         { key: "provider:hulu", name: "Hulu", hidden: false },
         { key: "provider:appletv", name: "Apple TV+", hidden: true },
@@ -75,7 +75,7 @@ describe("UserSettingsService", () => {
       expect.objectContaining({
         create: expect.objectContaining({
           userId: 7,
-          hiddenProviders: [{ key: "watchmode:1", name: "Provider", hidden: true }],
+          hiddenProviders: [{ key: "tmdb:1", name: "Provider", hidden: true }],
           selectedProviders: [
             { key: "provider:hulu", name: "Hulu", hidden: false },
             { key: "provider:appletv", name: "Apple TV+", hidden: false },
@@ -88,7 +88,7 @@ describe("UserSettingsService", () => {
       }),
     );
     expect(result).toEqual({
-      hiddenProviders: [{ key: "watchmode:1", name: "Provider", hidden: true }],
+      hiddenProviders: [{ key: "tmdb:1", name: "Provider", hidden: true }],
       selectedProviders: [
         { key: "provider:hulu", name: "Hulu", hidden: false },
         { key: "provider:appletv", name: "Apple TV+", hidden: false },

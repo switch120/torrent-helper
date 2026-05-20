@@ -23,150 +23,6 @@ describeIfDatabase("PrismaReleaseRepository integration", () => {
     await prisma.$disconnect();
   });
 
-  it("writes and rereads a WatchMode fetch cache idempotently", async () => {
-    const input = {
-      cacheKey: "watchmode:releases:20260511000000:20260517235959",
-      requestedStartDate: "2026-05-11",
-      requestedEndDate: "2026-05-17",
-      coveredStartDate: "2026-05-11",
-      coveredEndDate: "2026-05-24",
-      fetchedAt: new Date("2026-05-16T12:00:00.000Z"),
-      raw: { releases: [{ id: 1 }, { id: 2 }] },
-      quota: {
-        rateLimitLimit: 60,
-        rateLimitRemaining: 59,
-        accountQuota: 1000,
-        accountQuotaUsed: 4,
-      },
-      releases: [
-        {
-          eventId: "1:203:2026-05-12:none",
-          watchmodeId: 1,
-          releaseSource: "watchmode" as const,
-          releaseKind: "streaming" as const,
-          title: "Movie",
-          titleType: "movie",
-          mediaType: "movie" as const,
-          tmdbId: 10,
-          tmdbType: "movie",
-          imdbId: "tt1",
-          posterUrl: null,
-          releaseDate: "2026-05-12",
-          sourceId: 203,
-          sourceName: "Netflix",
-          sourceType: "unknown" as const,
-          seasonNumber: null,
-          isOriginal: true,
-        },
-        {
-          eventId: "2:204:2026-05-19:1",
-          watchmodeId: 2,
-          releaseSource: "watchmode" as const,
-          releaseKind: "streaming" as const,
-          title: "Series",
-          titleType: "tv_series",
-          mediaType: "tv" as const,
-          tmdbId: 20,
-          tmdbType: "tv",
-          imdbId: "tt2",
-          posterUrl: null,
-          releaseDate: "2026-05-19",
-          sourceId: 204,
-          sourceName: "Prime Video",
-          sourceType: "unknown" as const,
-          seasonNumber: 1,
-          isOriginal: false,
-          voteAverage: 7.8,
-        },
-      ],
-    };
-
-    await repository.saveWatchModeFetch(input);
-    await repository.saveWatchModeFetch(input);
-
-    const cache = await repository.getFetchCoveringWeek("2026-05-18", "2026-05-24");
-    const currentReleases = await repository.getWeekReleases("2026-05-11", "2026-05-17");
-    const futureReleases = await repository.getWeekReleases("2026-05-18", "2026-05-24");
-
-    expect(cache).toEqual(
-      expect.objectContaining({
-        cacheKey: input.cacheKey,
-        coveredStartDate: "2026-05-11",
-        coveredEndDate: "2026-05-24",
-        status: "fresh",
-        warning: null,
-      }),
-    );
-    expect(currentReleases.map((release) => release.title)).toEqual(["Movie"]);
-    expect(futureReleases.map((release) => release.title)).toEqual(["Series"]);
-  });
-
-  it("removes stale events when a refreshed fetch has fewer releases", async () => {
-    const baseInput = {
-      cacheKey: "watchmode:releases:20260518000000:20260524235959",
-      requestedStartDate: "2026-05-18",
-      requestedEndDate: "2026-05-24",
-      coveredStartDate: "2026-05-18",
-      coveredEndDate: "2026-06-07",
-      fetchedAt: new Date("2026-05-16T12:00:00.000Z"),
-      raw: { releases: [{ id: 2 }, { id: 3 }] },
-      quota: {},
-      releases: [
-        {
-          eventId: "2:203:2026-05-19:none",
-          watchmodeId: 2,
-          releaseSource: "watchmode" as const,
-          releaseKind: "streaming" as const,
-          title: "Kept",
-          titleType: "movie",
-          mediaType: "movie" as const,
-          tmdbId: null,
-          tmdbType: null,
-          imdbId: null,
-          posterUrl: null,
-          releaseDate: "2026-05-19",
-          sourceId: 203,
-          sourceName: "Netflix",
-          sourceType: "unknown" as const,
-          seasonNumber: null,
-          isOriginal: false,
-        },
-        {
-          eventId: "3:203:2026-06-01:none",
-          watchmodeId: 3,
-          releaseSource: "watchmode" as const,
-          releaseKind: "streaming" as const,
-          title: "Removed",
-          titleType: "movie",
-          mediaType: "movie" as const,
-          tmdbId: null,
-          tmdbType: null,
-          imdbId: null,
-          posterUrl: null,
-          releaseDate: "2026-06-01",
-          sourceId: 203,
-          sourceName: "Netflix",
-          sourceType: "unknown" as const,
-          seasonNumber: null,
-          isOriginal: false,
-        },
-      ],
-    };
-
-    await repository.saveWatchModeFetch(baseInput);
-    await repository.saveWatchModeFetch({
-      ...baseInput,
-      raw: { releases: [{ id: 2 }] },
-      releases: [baseInput.releases[0]],
-    });
-
-    const futureReleases = await repository.getWeekReleases("2026-05-18", "2026-05-24");
-    const staleReleases = await repository.getWeekReleases("2026-06-01", "2026-06-07");
-
-    expect(futureReleases.map((release) => release.title)).toEqual(["Kept"]);
-    expect(staleReleases).toHaveLength(0);
-  });
-
   it("writes and rereads TMDB digital movie weeks idempotently", async () => {
     const input = {
       weekStart: "2026-06-08",
@@ -177,7 +33,7 @@ describeIfDatabase("PrismaReleaseRepository integration", () => {
       releases: [
         {
           eventId: "tmdb:digital:100:2026-06-10",
-          watchmodeId: 100,
+          sourceTitleId: 100,
           releaseSource: "tmdb" as const,
           releaseKind: "digital" as const,
           title: "Digital Movie",
@@ -232,7 +88,7 @@ describeIfDatabase("PrismaReleaseRepository integration", () => {
       releases: [
         {
           eventId: "tmdb:tv:87917:350:2026-05-15:5:8",
-          watchmodeId: 87917,
+          sourceTitleId: 87917,
           releaseSource: "tmdb" as const,
           releaseKind: "streaming" as const,
           title: "For All Mankind",
@@ -294,8 +150,4 @@ async function cleanDatabase(prisma: PrismaService): Promise<void> {
   await prisma.tmdbTvWeekCache.deleteMany();
   await prisma.tmdbDigitalMovie.deleteMany();
   await prisma.tmdbDigitalWeekCache.deleteMany();
-  await prisma.releaseEvent.deleteMany();
-  await prisma.watchModeFetchCache.deleteMany();
-  await prisma.releaseTitle.deleteMany();
-  await prisma.releaseSource.deleteMany();
 }

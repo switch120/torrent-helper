@@ -112,8 +112,8 @@ describe("TMDB detail mapping", () => {
 function baseRelease(overrides: Partial<NormalizedRelease> = {}): NormalizedRelease {
   return {
     eventId: "event-1",
-    watchmodeId: 1,
-    releaseSource: "watchmode",
+    sourceTitleId: 1,
+    releaseSource: "tmdb",
     releaseKind: "streaming",
     title: "Release",
     titleType: "movie",
