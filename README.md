@@ -6,7 +6,7 @@ Run Transmission behind a VPN tunnel on Docker, with a local release hub that pe
 ### What it does
 This project uses the [haugene/transmission-openvpn](https://hub.docker.com/r/haugene/transmission-openvpn/) image so Transmission only runs while OpenVPN has an active tunnel. The NestJS release API talks to Transmission over RPC for torrent add/status behavior and completed-torrent cleanup.
 
-New installs persist haugene/Transmission configuration in the `trans-config` volume mounted at `/config`, and downloads remain on the `trans-data` NFS-backed volume mounted at `/data`. Existing installs may still have legacy Transmission configuration at `/data/transmission-home`; do not auto-copy that folder from NFS during routine upgrades.
+Transmission configuration persists in the `trans-config` volume mounted at `/config`, and downloads remain on the `trans-data` NFS-backed volume mounted at `/data`.
 
 The release hub is an additive local web app. It runs a NestJS API, Angular UI, PostgreSQL cache, and optional Prowlarr integration in separate Docker services. TMDB is the release source for movie digital dates, provider streaming context, TV episode airings, ratings, details, and favorite-show snapshots.
 
@@ -138,7 +138,7 @@ The Downloads page can show a proxy-health card when Transmission contains the [
   <img src="docs/images/downloads-status.png" alt="Downloads drawer showing Transmission status, transfer stats, and masked proxy health IPs" width="900">
 </p>
 
-To add the checker in a fresh setup:
+To add the checker:
 
 ```bash
 docker compose up -d torrentHost
@@ -150,9 +150,5 @@ This adds only the checker magnet to Transmission and stores it in Transmission'
 ### Accessing Transmission WebUI
 Once `torrentHost` is running and healthy, access the Transmission web interface at `http://localhost:9091/web`.
 
-### Upgrade Notes
-The Compose file pins `haugene/transmission-openvpn:5.4.1`. If this upgrade causes provider-specific trouble, roll the image back to `haugene/transmission-openvpn:5.3.2` and rerun the diagnostics before changing torrent clients or VPN container architecture.
-
-The Prowlarr image is pinned by digest for repeatable local installs. Bump it intentionally when you want to pick up a newer Prowlarr release.
-
-If haugene logs a warning about `/data/transmission-home`, leave it alone during normal operation. Any migration from that legacy NFS-backed folder to `/config/transmission-home` should be planned separately and should not copy from the NFS-backed data volume during routine startup or verification.
+### Image Versions
+The Compose file pins `haugene/transmission-openvpn:5.4.1` and pins Prowlarr by digest.

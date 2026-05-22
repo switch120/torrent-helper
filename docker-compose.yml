@@ -80,8 +80,6 @@ services:
     privileged: true
     volumes:
       - trans-data:/data
-      # New installs persist haugene/Transmission config here. Do not auto-migrate
-      # legacy /data/transmission-home from the NFS-backed data volume.
       - trans-config:/config
       - .:/usr/src/app
     environment:
