@@ -13,7 +13,7 @@ import type { NormalizedRelease } from "./release.types";
 import type { ReleaseDetail } from "./release-detail.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
-const tmdbDigitalDatePolicy = "original-us-digital-with-streaming-providers-v1";
+const tmdbDigitalDatePolicy = "original-us-digital-with-provider-backed-fallback-v2";
 
 @Injectable()
 export class PrismaReleaseRepository implements ReleaseRepository {
@@ -68,19 +68,19 @@ export class PrismaReleaseRepository implements ReleaseRepository {
       const raw = isRecord(movie.raw) ? movie.raw : {};
       return {
         eventId: movie.eventId,
-        sourceTitleId: movie.tmdbId,
-        releaseSource: "tmdb",
+        sourceTitleId: normalizeNumber(raw.sourceTitleId) ?? movie.tmdbId,
+        releaseSource: normalizeReleaseSource(raw.releaseSource),
         releaseKind: "digital",
         title: movie.title,
         titleType: "movie",
         mediaType: "movie",
         tmdbId: movie.tmdbId,
         tmdbType: "movie",
-        imdbId: null,
+        imdbId: normalizeString(raw.imdbId),
         posterUrl: movie.posterUrl,
         releaseDate: toDateOnly(movie.releaseDate),
-        sourceId: 0,
-        sourceName: raw.isDigitalDateFallback === true ? "New release" : "Digital release",
+        sourceId: normalizeNumber(raw.sourceId) ?? 0,
+        sourceName: normalizeString(raw.sourceName) || (raw.isDigitalDateFallback === true ? "New release" : "Digital release"),
         sourceType: "digital",
         seasonNumber: null,
         isOriginal: Boolean(raw.isOriginal),
@@ -311,19 +311,19 @@ export class PrismaReleaseRepository implements ReleaseRepository {
     const raw = isRecord(movie.raw) ? movie.raw : {};
     return {
       eventId: movie.eventId,
-      sourceTitleId: movie.tmdbId,
-      releaseSource: "tmdb",
+      sourceTitleId: normalizeNumber(raw.sourceTitleId) ?? movie.tmdbId,
+      releaseSource: normalizeReleaseSource(raw.releaseSource),
       releaseKind: "digital",
       title: movie.title,
       titleType: "movie",
       mediaType: "movie",
       tmdbId: movie.tmdbId,
       tmdbType: "movie",
-      imdbId: null,
+      imdbId: normalizeString(raw.imdbId),
       posterUrl: movie.posterUrl,
       releaseDate: toDateOnly(movie.releaseDate),
-      sourceId: 0,
-      sourceName: raw.isDigitalDateFallback === true ? "New release" : "Digital release",
+      sourceId: normalizeNumber(raw.sourceId) ?? 0,
+      sourceName: normalizeString(raw.sourceName) || (raw.isDigitalDateFallback === true ? "New release" : "Digital release"),
       sourceType: "digital",
       seasonNumber: null,
       isOriginal: false,
@@ -511,6 +511,20 @@ function normalizeReleaseSources(value: unknown): NormalizedRelease["sources"] {
     .filter((source) => source.key && source.name);
 
   return sources.length > 0 ? sources : undefined;
+}
+
+function normalizeReleaseSource(value: unknown): NormalizedRelease["releaseSource"] {
+  return value === "dvdsreleasedates" ? "dvdsreleasedates" : "tmdb";
+}
+
+function normalizeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 function normalizeSourceType(value: string): NormalizedRelease["sourceType"] {

@@ -3,7 +3,7 @@ import type { FetchCacheSnapshot } from "./release.types";
 
 export type CacheDecision = {
   shouldFetch: boolean;
-  reason: "missing" | "refresh-requested" | "frozen-past" | "expired" | "fresh";
+  reason: "missing" | "refresh-requested" | "expired" | "fresh";
 };
 
 export type CacheDecisionInput = {
@@ -23,12 +23,11 @@ export function getCacheDecision(input: CacheDecisionInput): CacheDecision {
   }
 
   const now = input.now || new Date();
-  const kind = classifyWeek(input.weekStart, now);
-  if (kind === "past") {
-    return { shouldFetch: false, reason: "frozen-past" };
+  if (classifyWeek(input.weekStart, now) === "past") {
+    return { shouldFetch: false, reason: "fresh" };
   }
 
-  const expiresAt = getNextExpiry(input.weekStart, input.cache.fetchedAt);
+  const expiresAt = getNextExpiry(input.weekStart, input.cache.fetchedAt, now);
   if (expiresAt && expiresAt.getTime() <= now.getTime()) {
     return { shouldFetch: true, reason: "expired" };
   }
@@ -36,10 +35,7 @@ export function getCacheDecision(input: CacheDecisionInput): CacheDecision {
   return { shouldFetch: false, reason: "fresh" };
 }
 
-export function getNextExpiry(weekStart: string, fetchedAt: Date): Date | null {
-  const kind = classifyWeek(weekStart, fetchedAt);
-  if (kind === "past") return null;
-
-  const hours = kind === "current" ? 24 : 6;
-  return new Date(fetchedAt.getTime() + hours * 60 * 60 * 1000);
+export function getNextExpiry(weekStart: string, fetchedAt: Date, now: Date = fetchedAt): Date | null {
+  if (classifyWeek(weekStart, now) === "past") return null;
+  return new Date(fetchedAt.getTime() + 24 * 60 * 60 * 1000);
 }

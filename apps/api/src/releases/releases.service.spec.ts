@@ -3,6 +3,7 @@ import type { ReleaseRepository } from "./release.repository";
 import type { NormalizedRelease } from "./release.types";
 import { ReleasesService } from "./releases.service";
 import type { TmdbClient } from "./tmdb.client";
+import type { DvdReleaseDatesClient } from "./dvd-release-dates.client";
 
 describe("ReleasesService", () => {
   it("returns an empty week with a TMDB warning when release data is not configured", async () => {
@@ -79,6 +80,90 @@ describe("ReleasesService", () => {
     expect(result.tv.map((item) => item.title)).toEqual(["Streaming Show"]);
   });
 
+  it("merges DVDsReleaseDates digital rows after resolving their IMDb ids through TMDB", async () => {
+    const repository = createRepository({
+      movies: [
+        release({
+          eventId: "dvdsreleasedates:digital:12740:2026-05-26",
+          sourceTitleId: 12740,
+          releaseSource: "dvdsreleasedates",
+          title: "Over Your Dead Body",
+          releaseDate: "2026-05-26",
+          tmdbId: 1390300,
+          imdbId: "tt34685692",
+          sourceId: 12740,
+          sourceName: "Digital HD",
+          posterUrl: "https://www.dvdsreleasedates.com/posters/110/O/Over-Your-Dead-Body-2026.jpg",
+          primaryReleaseDate: "2026-04-24",
+          voteAverage: 6.8,
+          voteCount: 30,
+          popularity: 89.04,
+          isFeaturedDigital: true,
+          originalLanguage: "en",
+        }),
+      ],
+    });
+    const tmdb = createTmdb({
+      movieResult: { releases: [], raw: { movies: [] } },
+      tvResult: { releases: [], raw: {} },
+      findMovieByImdbId: vi.fn(async () => ({
+        id: 1390300,
+        title: "Over Your Dead Body",
+        posterUrl: "https://image.tmdb.org/t/p/w342/over-your-dead-body.jpg",
+        releaseDate: "2026-04-24",
+        originalLanguage: "en",
+        popularity: 89.04,
+        voteAverage: 6.8,
+        voteCount: 30,
+      })),
+    });
+    const dvdReleaseDates = createDvdReleaseDates({
+      releases: [
+        {
+          sourceTitleId: 12740,
+          title: "Over Your Dead Body",
+          releaseDate: "2026-05-26",
+          detailUrl: "https://www.dvdsreleasedates.com/movies/12740/over-your-dead-body",
+          posterUrl: "https://www.dvdsreleasedates.com/posters/110/O/Over-Your-Dead-Body-2026.jpg",
+          imdbId: "tt34685692",
+          imdbRating: 6.8,
+          contentRating: "R",
+        },
+      ],
+    });
+    const service = new ReleasesService(
+      repository,
+      tmdb,
+      () => new Date("2026-05-28T12:00:00.000Z"),
+      dvdReleaseDates,
+    );
+
+    const result = await service.refreshWeek("2026-05-25");
+
+    expect(dvdReleaseDates.getDigitalMovieReleases).toHaveBeenCalledWith({
+      weekStart: "2026-05-25",
+      weekEnd: "2026-05-31",
+    });
+    expect(tmdb.findMovieByImdbId).toHaveBeenCalledWith("tt34685692");
+    expect(repository.saveTmdbDigitalWeek).toHaveBeenCalledWith(
+      expect.objectContaining({
+        weekStart: "2026-05-25",
+        weekEnd: "2026-05-31",
+        releases: [
+          expect.objectContaining({
+            eventId: "dvdsreleasedates:digital:12740:2026-05-26",
+            releaseSource: "dvdsreleasedates",
+            title: "Over Your Dead Body",
+            tmdbId: 1390300,
+            imdbId: "tt34685692",
+            sourceName: "Digital HD",
+          }),
+        ],
+      }),
+    );
+    expect(result.movies.map((movie) => movie.title)).toEqual(["Over Your Dead Body"]);
+  });
+
   it("returns cached TMDB releases with a warning when refresh fails", async () => {
     const movie = release({
       eventId: "tmdb:digital:100:2026-05-12",
@@ -111,6 +196,51 @@ describe("ReleasesService", () => {
 
     expect(result.movies.map((item) => item.title)).toEqual(["Cached Movie"]);
     expect(result.cache.warning).toContain("TMDB 429");
+  });
+
+  it("allows manually refreshing a previously cached past week", async () => {
+    const movie = release({
+      eventId: "tmdb:digital:100:2026-05-05",
+      title: "Past Week Movie",
+      mediaType: "movie",
+      releaseKind: "digital",
+      releaseDate: "2026-05-05",
+      tmdbId: 100,
+      sourceName: "Digital release",
+    });
+    const repository = createRepository({
+      movieCache: {
+        weekStart: "2026-05-04",
+        weekEnd: "2026-05-10",
+        fetchedAt: new Date("2026-05-15T12:00:00.000Z"),
+        status: "fresh",
+        warning: null,
+      },
+      tvCache: {
+        weekStart: "2026-05-04",
+        weekEnd: "2026-05-10",
+        fetchedAt: new Date("2026-05-15T12:00:00.000Z"),
+        status: "fresh",
+        warning: null,
+      },
+      movies: [movie],
+    });
+    const tmdb = createTmdb({
+      movieResult: { releases: [movie], raw: { movies: [100] } },
+      tvResult: { releases: [], raw: {} },
+    });
+    const service = new ReleasesService(repository, tmdb, () => new Date("2026-05-16T12:00:00.000Z"));
+
+    await service.refreshWeek("2026-05-04");
+
+    expect(tmdb.getDigitalMovieReleases).toHaveBeenCalledWith({
+      weekStart: "2026-05-04",
+      weekEnd: "2026-05-10",
+    });
+    expect(tmdb.getTvAirings).toHaveBeenCalledWith({
+      weekStart: "2026-05-04",
+      weekEnd: "2026-05-10",
+    });
   });
 
   it("dedupes TMDB TV rows for the same episode across multiple source rows", async () => {
@@ -190,11 +320,27 @@ function createTmdb(overrides: Partial<{
   tvResult: Awaited<ReturnType<TmdbClient["getTvAirings"]>>;
   getDigitalMovieReleases: TmdbClient["getDigitalMovieReleases"];
   getTvAirings: TmdbClient["getTvAirings"];
-}> = {}): Pick<TmdbClient, "isConfigured" | "getDigitalMovieReleases" | "getTvAirings"> {
+  findMovieByImdbId: TmdbClient["findMovieByImdbId"];
+}> = {}): Pick<TmdbClient, "isConfigured" | "getDigitalMovieReleases" | "getTvAirings" | "findMovieByImdbId"> {
   return {
     isConfigured: vi.fn(() => overrides.configured ?? true),
     getDigitalMovieReleases: vi.fn(overrides.getDigitalMovieReleases ?? (async () => overrides.movieResult ?? { releases: [], raw: {} })),
     getTvAirings: vi.fn(overrides.getTvAirings ?? (async () => overrides.tvResult ?? { releases: [], raw: {} })),
+    findMovieByImdbId: vi.fn(overrides.findMovieByImdbId ?? (async () => null)),
+  };
+}
+
+function createDvdReleaseDates(overrides: Partial<{
+  releases: Awaited<ReturnType<DvdReleaseDatesClient["getDigitalMovieReleases"]>>["releases"];
+}> = {}): Pick<DvdReleaseDatesClient, "getDigitalMovieReleases"> {
+  return {
+    getDigitalMovieReleases: vi.fn(async () => ({
+      releases: overrides.releases ?? [],
+      raw: {
+        months: ["2026-05"],
+        pages: [],
+      },
+    })),
   };
 }
 

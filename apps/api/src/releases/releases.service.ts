@@ -1,9 +1,12 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Optional } from "@nestjs/common";
 import { getCacheDecision, getNextExpiry } from "./cache-policy";
+import { DvdReleaseDatesClient } from "./dvd-release-dates.client";
 import { RELEASE_REPOSITORY, TMDB_CLIENT } from "./release.tokens";
 import type { ReleaseRepository } from "./release.repository";
 import type { FetchCacheSnapshot, NormalizedRelease, ReleaseWeekResponse } from "./release.types";
-import type { TmdbClient } from "./tmdb.client";
+import type { DvdDigitalRelease } from "./dvd-release-dates.client";
+import { isInternationalLanguage, normalizeOriginalLanguage } from "./release-language";
+import type { TmdbClient, TmdbMovieLookup } from "./tmdb.client";
 import { buildWeekWindow } from "./week.utils";
 
 type Clock = () => Date;
@@ -14,8 +17,11 @@ export class ReleasesService {
 
   constructor(
     @Inject(RELEASE_REPOSITORY) private readonly repository: ReleaseRepository,
-    @Inject(TMDB_CLIENT) private readonly tmdb: Pick<TmdbClient, "isConfigured" | "getDigitalMovieReleases" | "getTvAirings">,
+    @Inject(TMDB_CLIENT) private readonly tmdb: Pick<TmdbClient, "isConfigured" | "getDigitalMovieReleases" | "getTvAirings" | "findMovieByImdbId">,
+    @Optional()
     private readonly clock: Clock = () => new Date(),
+    @Optional()
+    private readonly dvdReleaseDates: Pick<DvdReleaseDatesClient, "getDigitalMovieReleases"> = new DvdReleaseDatesClient(),
   ) {}
 
   async getWeek(weekStartInput: string): Promise<ReleaseWeekResponse> {
@@ -104,16 +110,18 @@ export class ReleasesService {
           weekStart: window.weekStart,
           weekEnd: window.weekEnd,
         });
+        const supplemental = await this.getSupplementalDigitalMovies(window, result.releases);
+        const releases = dedupeReleases([...result.releases, ...supplemental.releases]);
 
         await this.repository.saveTmdbDigitalWeek({
           weekStart: window.weekStart,
           weekEnd: window.weekEnd,
           fetchedAt: now,
           expiresAt: getNextExpiry(window.weekStart, now),
-          releases: result.releases,
-          raw: result.raw,
+          releases,
+          raw: withSupplementalRaw(result.raw, supplemental.raw),
         });
-        return null;
+        return supplemental.warning;
       } catch (error) {
         return error instanceof Error ? error.message : "TMDB digital movie refresh failed.";
       }
@@ -201,6 +209,54 @@ export class ReleasesService {
     return run;
   }
 
+  private async getSupplementalDigitalMovies(
+    window: ReturnType<typeof buildWeekWindow>,
+    tmdbReleases: NormalizedRelease[],
+  ): Promise<{
+    releases: NormalizedRelease[];
+    raw: unknown;
+    warning: string | null;
+  }> {
+    try {
+      const result = await this.dvdReleaseDates.getDigitalMovieReleases({
+        weekStart: window.weekStart,
+        weekEnd: window.weekEnd,
+      });
+      return {
+        releases: await this.normalizeDvdDigitalMovies(result.releases, tmdbReleases),
+        raw: result.raw,
+        warning: null,
+      };
+    } catch (error) {
+      return {
+        releases: [],
+        raw: { error: error instanceof Error ? error.message : "DVDsReleaseDates refresh failed." },
+        warning: error instanceof Error ? error.message : "DVDsReleaseDates refresh failed.",
+      };
+    }
+  }
+
+  private async normalizeDvdDigitalMovies(
+    releases: DvdDigitalRelease[],
+    tmdbReleases: NormalizedRelease[],
+  ): Promise<NormalizedRelease[]> {
+    const existingKeys = new Set(
+      tmdbReleases
+        .filter((release) => release.tmdbId)
+        .map((release) => `${release.tmdbId}:${release.releaseDate}`),
+    );
+    const normalized: NormalizedRelease[] = [];
+
+    for (const release of releases) {
+      if (!release.imdbId) continue;
+      const tmdbMovie = await this.tmdb.findMovieByImdbId(release.imdbId);
+      if (!tmdbMovie || existingKeys.has(`${tmdbMovie.id}:${release.releaseDate}`)) continue;
+      normalized.push(normalizeDvdDigitalMovie(release, tmdbMovie));
+    }
+
+    return normalized;
+  }
+
   private toResponse(
     weekStart: string,
     weekEnd: string,
@@ -209,7 +265,7 @@ export class ReleasesService {
     warning: string | null = null,
   ): ReleaseWeekResponse {
     const sorted = [...releases].sort(compareRelease);
-    const expiresAt = cache?.fetchedAt ? getNextExpiry(weekStart, cache.fetchedAt) : null;
+    const expiresAt = cache?.fetchedAt ? getNextExpiry(weekStart, cache.fetchedAt, this.clock()) : null;
 
     return {
       weekStart,
@@ -227,9 +283,61 @@ export class ReleasesService {
 }
 
 function getRefreshDecision(input: Parameters<typeof getCacheDecision>[0]) {
-  const normalDecision = getCacheDecision({ ...input, forceRefresh: false });
-  if (normalDecision.reason === "frozen-past") return normalDecision;
   return getCacheDecision(input);
+}
+
+function normalizeDvdDigitalMovie(release: DvdDigitalRelease, tmdbMovie: TmdbMovieLookup): NormalizedRelease {
+  const originalLanguage = normalizeOriginalLanguage(tmdbMovie.originalLanguage);
+  return {
+    eventId: `dvdsreleasedates:digital:${release.sourceTitleId}:${release.releaseDate}`,
+    sourceTitleId: release.sourceTitleId,
+    releaseSource: "dvdsreleasedates",
+    releaseKind: "digital",
+    title: release.title || tmdbMovie.title,
+    titleType: "movie",
+    mediaType: "movie",
+    tmdbId: tmdbMovie.id,
+    tmdbType: "movie",
+    imdbId: release.imdbId,
+    posterUrl: release.posterUrl || tmdbMovie.posterUrl,
+    releaseDate: release.releaseDate,
+    sourceId: release.sourceTitleId,
+    sourceName: "Digital HD",
+    sourceType: "digital",
+    seasonNumber: null,
+    isOriginal: false,
+    primaryReleaseDate: tmdbMovie.releaseDate,
+    popularity: tmdbMovie.popularity,
+    voteAverage: tmdbMovie.voteAverage ?? release.imdbRating,
+    voteCount: tmdbMovie.voteCount,
+    isFeaturedDigital: true,
+    isDigitalDateFallback: false,
+    originalLanguage,
+    isInternational: isInternationalLanguage(originalLanguage),
+    isDubbed: false,
+  };
+}
+
+function withSupplementalRaw(raw: unknown, supplementalRaw: unknown): unknown {
+  if (isRecord(raw)) {
+    return {
+      ...raw,
+      supplementalDigitalReleases: {
+        dvdsReleaseDates: supplementalRaw,
+      },
+    };
+  }
+
+  return {
+    tmdb: raw,
+    supplementalDigitalReleases: {
+      dvdsReleaseDates: supplementalRaw,
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function compareRelease(a: NormalizedRelease, b: NormalizedRelease): number {

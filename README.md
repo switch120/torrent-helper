@@ -8,7 +8,7 @@ This project uses the [haugene/transmission-openvpn](https://hub.docker.com/r/ha
 
 Transmission configuration persists in the `trans-config` volume mounted at `/config`, and downloads remain on the `trans-data` NFS-backed volume mounted at `/data`.
 
-The release hub is an additive local web app. It runs a NestJS API, Angular UI, PostgreSQL cache, and optional Prowlarr integration in separate Docker services. TMDB is the release source for movie digital dates, provider streaming context, TV episode airings, ratings, details, and favorite-show snapshots.
+The release hub is an additive local web app. It runs a NestJS API, Angular UI, PostgreSQL cache, and optional Prowlarr integration in separate Docker services. TMDB is the primary source for movie digital dates, provider streaming context, TV episode airings, ratings, details, and favorite-show snapshots. DVDsReleaseDates supplements movie Digital HD weeks when TMDB misses a title.
 
 ### Getting Started
 * Copy `.env.example` to `.env`.
@@ -59,7 +59,7 @@ docker compose down
 While `releaseApi` is running, a NestJS cron checks Transmission every 30 seconds and removes any torrents that have completed and begun seeding. Local data is not deleted; this matches Transmission's `torrent-remove` behavior with `delete-local-data` disabled.
 
 ### Digital Release Hub
-The release hub lets you choose a Monday-Sunday week and view cached digital releases grouped into Movies and TV. TMDB powers the primary weekly surface: original digital movie dates, provider streaming context, TV airings, details, ratings, language flags, and favorite-show snapshots. The app stores release snapshots, normalized release rows, user settings, favorites, torrent searches, and download history in the local `release-db18` Postgres volume, not on the NFS-backed Transmission data volume.
+The release hub lets you choose a Monday-Sunday week and view cached digital releases grouped into Movies and TV. TMDB powers the primary weekly surface: original digital movie dates, provider streaming context, TV airings, details, ratings, language flags, and favorite-show snapshots. DVDsReleaseDates is used as a supplemental Digital HD schedule for movie weeks and is matched back to TMDB through IMDb IDs before rows are stored. The app stores release snapshots, normalized release rows, user settings, favorites, torrent searches, and download history in the local `release-db18` Postgres volume, not on the NFS-backed Transmission data volume.
 
 <p>
   <img src="docs/images/release-week-browser.png" alt="Release hub weekly browser showing movie and TV digital releases" width="900">
@@ -67,11 +67,13 @@ The release hub lets you choose a Monday-Sunday week and view cached digital rel
 
 Cache behavior:
 * TMDB movie and TV weeks are cached separately and merged into the Movies and TV sections.
+* Movie week refreshes may include DVDsReleaseDates supplemental Digital HD rows when TMDB misses an expected title.
+* DVDsReleaseDates does not expose a digital-specific RSS/API feed, so the app fetches the public monthly Digital HD HTML page at refresh time and relies on the weekly cache to keep requests low-volume.
 * TMDB digital movies with a recent primary release date plus a popularity or vote-count signal are ranked first and labeled `Featured digital`; older catalog/re-release rows stay lower or are excluded when they are not the original digital date.
 * Weekly browsing is a read-time projection over cached release dates, not a separate copy of each upstream response.
-* Past weeks freeze after a successful fetch.
-* The current week refreshes after 24 hours.
-* Future weeks refresh after 6 hours or when you click refresh.
+* Cached past weeks are treated as permanent unless you click refresh.
+* Current and future weeks refresh after 24 hours or when you click refresh.
+* Any week can be manually refreshed.
 * If TMDB fails and cached data exists, the API returns stale cached data with a warning.
 * TMDB 429 and transient server errors are retried with backoff before surfacing a warning.
 

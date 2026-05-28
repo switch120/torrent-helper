@@ -1,5 +1,5 @@
 export type ReleaseMediaType = "movie" | "tv";
-export type ReleaseSourceName = "tmdb";
+export type ReleaseSourceName = "tmdb" | "dvdsreleasedates";
 export type ReleaseKind = "streaming" | "digital";
 export type ReleaseSourceType = "sub" | "purchase" | "free" | "tve" | "digital" | "unknown";
 

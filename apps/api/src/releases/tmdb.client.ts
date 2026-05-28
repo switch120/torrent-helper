@@ -94,6 +94,21 @@ type TmdbPersonExternalIdsResponse = {
   imdb_id?: string | null;
 };
 
+type TmdbFindMovieResponse = {
+  movie_results?: TmdbMovieSummary[];
+};
+
+export type TmdbMovieLookup = {
+  id: number;
+  title: string;
+  posterUrl: string | null;
+  releaseDate: string | null;
+  originalLanguage: string | null;
+  popularity: number | null;
+  voteAverage: number | null;
+  voteCount: number | null;
+};
+
 type TmdbWatchProvider = {
   provider_id: number;
   provider_name: string;
@@ -445,6 +460,26 @@ export class TmdbClient {
 
   getPersonExternalIds(personId: number): Promise<TmdbPersonExternalIdsResponse> {
     return this.fetchJson<TmdbPersonExternalIdsResponse>(this.url(`/3/person/${personId}/external_ids`));
+  }
+
+  async findMovieByImdbId(imdbId: string): Promise<TmdbMovieLookup | null> {
+    if (!this.isConfigured()) return null;
+    const url = this.url(`/3/find/${encodeURIComponent(imdbId)}`);
+    url.searchParams.set("external_source", "imdb_id");
+    const response = await this.fetchJson<TmdbFindMovieResponse>(url);
+    const movie = response.movie_results?.[0];
+    if (!movie) return null;
+
+    return {
+      id: movie.id,
+      title: movie.title || movie.original_title || `TMDB ${movie.id}`,
+      posterUrl: movie.poster_path ? `${this.imageBaseUrl}${movie.poster_path}` : null,
+      releaseDate: movie.release_date || null,
+      originalLanguage: movie.original_language || null,
+      popularity: movie.popularity ?? null,
+      voteAverage: movie.vote_average ?? null,
+      voteCount: movie.vote_count ?? null,
+    };
   }
 
   private async fetchJson<T>(url: URL): Promise<T> {

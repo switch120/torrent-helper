@@ -2,6 +2,45 @@ import { describe, expect, it } from "vitest";
 import { TmdbClient } from "./tmdb.client";
 
 describe("TmdbClient", () => {
+  it("finds TMDB movie metadata by IMDb id", async () => {
+    const calls: string[] = [];
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      fetchImpl: async (url) => {
+        calls.push(url);
+        return new Response(
+          JSON.stringify({
+            movie_results: [
+              {
+                id: 1390300,
+                title: "Over Your Dead Body",
+                poster_path: "/over-your-dead-body.jpg",
+                release_date: "2026-04-24",
+                original_language: "en",
+                popularity: 89.04,
+                vote_average: 6.8,
+                vote_count: 30,
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    await expect(client.findMovieByImdbId("tt34685692")).resolves.toEqual({
+      id: 1390300,
+      title: "Over Your Dead Body",
+      posterUrl: "https://image.tmdb.org/t/p/w342/over-your-dead-body.jpg",
+      releaseDate: "2026-04-24",
+      originalLanguage: "en",
+      popularity: 89.04,
+      voteAverage: 6.8,
+      voteCount: 30,
+    });
+    expect(calls[0]).toContain("/3/find/tt34685692");
+    expect(calls[0]).toContain("external_source=imdb_id");
+  });
+
   it("retries TMDB rate limit responses before failing the request", async () => {
     let calls = 0;
     const client = new TmdbClient({
