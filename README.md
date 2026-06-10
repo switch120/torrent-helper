@@ -71,7 +71,7 @@ Cache behavior:
 * DVDsReleaseDates does not expose a digital-specific RSS/API feed, so the app fetches the public monthly Digital HD HTML page at refresh time and relies on the weekly cache to keep requests low-volume.
 * TMDB digital movies with a recent primary release date plus a popularity or vote-count signal are ranked first and labeled `Featured digital`; older catalog/re-release rows stay lower or are excluded when they are not the original digital date.
 * Weekly browsing is a read-time projection over cached release dates, not a separate copy of each upstream response.
-* Cached past weeks are treated as permanent unless you click refresh.
+* Cached past weeks are treated as permanent after they have been fetched once the week has completed.
 * Current and future weeks refresh after 24 hours or when you click refresh.
 * Any week can be manually refreshed.
 * If TMDB fails and cached data exists, the API returns stale cached data with a warning.

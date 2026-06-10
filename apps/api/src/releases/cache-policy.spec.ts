@@ -11,30 +11,43 @@ describe("release week cache policy", () => {
     });
   });
 
-  it("keeps cached prior weeks permanently until manually refreshed", () => {
+  it("keeps finalized cached prior weeks permanently until manually refreshed", () => {
     expect(
       getCacheDecision({
         weekStart: "2026-05-04",
         now,
         cache: {
           status: "fresh",
-          fetchedAt: new Date("2026-05-08T12:00:00.000Z"),
+          fetchedAt: new Date("2026-05-11T12:00:00.000Z"),
         },
       }),
     ).toEqual({ shouldFetch: false, reason: "fresh" });
   });
 
-  it("keeps older cached past weeks permanently until manually refreshed", () => {
+  it("keeps older finalized cached past weeks permanently until manually refreshed", () => {
     expect(
       getCacheDecision({
         weekStart: "2026-04-06",
         now,
         cache: {
           status: "fresh",
-          fetchedAt: new Date("2026-04-10T12:00:00.000Z"),
+          fetchedAt: new Date("2026-04-13T12:00:00.000Z"),
         },
       }),
     ).toEqual({ shouldFetch: false, reason: "fresh" });
+  });
+
+  it("refreshes a past week when the cached snapshot was taken before that week completed", () => {
+    expect(
+      getCacheDecision({
+        weekStart: "2026-06-01",
+        now: new Date("2026-06-09T12:00:00.000Z"),
+        cache: {
+          status: "fresh",
+          fetchedAt: new Date("2026-05-28T18:51:26.006Z"),
+        },
+      }),
+    ).toEqual({ shouldFetch: true, reason: "expired" });
   });
 
   it("lets manually refreshed past weeks bypass the decay window", () => {
@@ -90,8 +103,18 @@ describe("release week cache policy", () => {
     ).toEqual({ shouldFetch: true, reason: "expired" });
   });
 
-  it("does not report expiry timestamps for cached past weeks", () => {
-    expect(getNextExpiry("2026-05-04", new Date("2026-05-08T12:00:00.000Z"), now)).toBeNull();
+  it("does not report expiry timestamps for finalized cached past weeks", () => {
+    expect(getNextExpiry("2026-05-04", new Date("2026-05-11T12:00:00.000Z"), now)).toBeNull();
+  });
+
+  it("reports expiry timestamps for past weeks cached before the week completed", () => {
+    expect(
+      getNextExpiry(
+        "2026-06-01",
+        new Date("2026-05-28T18:51:26.006Z"),
+        new Date("2026-06-09T12:00:00.000Z"),
+      )?.toISOString(),
+    ).toBe("2026-05-29T18:51:26.006Z");
   });
 
   it("reports twenty four hour expiry timestamps for future weeks", () => {
