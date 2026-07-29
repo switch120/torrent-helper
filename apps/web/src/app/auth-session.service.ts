@@ -110,6 +110,9 @@ export class AuthSessionService {
           }),
           catchError((error) => {
             const concurrentRefresh = isConcurrentRefreshRejection(error);
+            if (!isTerminalRefreshRejection(error)) {
+              return throwError(() => error);
+            }
             return from(
               this.waitForRotatedStoredSession(
                 refreshToken,
@@ -307,4 +310,8 @@ function isConcurrentRefreshRejection(error: unknown): boolean {
     "code" in response &&
     response.code === "refresh_token_rotated"
   );
+}
+
+function isTerminalRefreshRejection(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && error.status === 401;
 }

@@ -209,6 +209,28 @@ describe("AuthSessionService", () => {
     expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
   });
 
+  it("preserves the session across retryable refresh failures", async () => {
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+
+    const unavailableRefresh = firstValueFrom(service.refreshAccessToken(true));
+    http.expectOne("/api/auth/refresh").flush(
+      { message: "Temporarily unavailable." },
+      { status: 503, statusText: "Service Unavailable" },
+    );
+    await expect(unavailableRefresh).rejects.toMatchObject({ status: 503 });
+
+    const networkRefresh = firstValueFrom(service.refreshAccessToken(true));
+    http.expectOne("/api/auth/refresh").error(new ProgressEvent("error"));
+    await expect(networkRefresh).rejects.toMatchObject({ status: 0 });
+
+    expect(service.snapshot()).toEqual(session.user);
+    expect(service.hasStoredSession()).toBe(true);
+    expect(localStorage.getItem("release-hub.auth.session.v1")).toContain(
+      "\"refreshToken\":\"refresh-token\"",
+    );
+  });
+
   it("revokes the newest stored refresh token when another tab rotated it", () => {
     service.login("admin", "admin@123").subscribe();
     http.expectOne("/api/auth/login").flush(session);

@@ -34,6 +34,7 @@ describe("AuthSessionService", () => {
       passwordHash: await passwords.hashPassword("admin@123"),
     };
     const prisma = {
+      $executeRaw: vi.fn().mockResolvedValue(0),
       appUser: {
         findUnique: vi.fn().mockImplementation(({ where }) =>
           Promise.resolve(
@@ -80,6 +81,33 @@ describe("AuthSessionService", () => {
     );
   });
 
+  it("cleans stale refresh tokens in bounded, throttled batches", async () => {
+    const passwords = {
+      verifyPassword: vi.fn().mockResolvedValue(true),
+    };
+    const prisma = {
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      appUser: {
+        findUnique: vi.fn().mockResolvedValue(user),
+      },
+      refreshToken: {
+        create: vi.fn().mockResolvedValue({ id: 10 }),
+      },
+    };
+    const service = new AuthSessionService(prisma as never, passwords as never);
+
+    await service.login("admin", "admin@123");
+    await service.login("admin", "admin@123");
+
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$executeRaw).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Date),
+      500,
+    );
+    expect(prisma.refreshToken.create).toHaveBeenCalledTimes(2);
+  });
+
   it("rate-limits concurrent password guesses by source and account", async () => {
     const passwords = {
       verifyPassword: vi.fn(async () => false),
@@ -115,6 +143,7 @@ describe("AuthSessionService", () => {
       ),
     };
     const prisma = {
+      $executeRaw: vi.fn().mockResolvedValue(0),
       appUser: {
         findUnique: vi.fn().mockResolvedValue(user),
       },
@@ -270,6 +299,7 @@ describe("AuthSessionService", () => {
       },
     };
     const prisma = {
+      $executeRaw: vi.fn().mockResolvedValue(0),
       appUser: {
         findUnique: vi.fn().mockResolvedValue(user),
       },
@@ -326,6 +356,7 @@ describe("AuthSessionService", () => {
       },
     };
     const prisma = {
+      $executeRaw: vi.fn().mockResolvedValue(0),
       appUser: {
         findUnique: vi.fn().mockResolvedValue(user),
       },

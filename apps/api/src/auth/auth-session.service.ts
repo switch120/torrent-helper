@@ -3,6 +3,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Logger,
   OnModuleInit,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -29,6 +30,8 @@ const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_ATTEMPT_WINDOW_MS = 60_000;
 const LOGIN_BACKOFF_MS = 60_000;
 const LOGIN_ATTEMPT_STATE_LIMIT = 10_000;
+const REFRESH_TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const REFRESH_TOKEN_CLEANUP_BATCH_SIZE = 500;
 
 type AccessTokenPayload = {
   iss: string;
@@ -55,8 +58,10 @@ type LoginAttemptState = {
 
 @Injectable()
 export class AuthSessionService implements OnModuleInit {
+  private readonly logger = new Logger(AuthSessionService.name);
   private readonly loginAttempts = new Map<string, LoginAttemptState>();
   private nextLoginAttemptCleanupAt = 0;
+  private nextRefreshTokenCleanupAt = 0;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -119,6 +124,7 @@ export class AuthSessionService implements OnModuleInit {
       throw new UnauthorizedException("Invalid refresh token.");
     }
 
+    await this.cleanupRefreshTokens(now);
     const nextRefreshToken = this.generateRefreshToken();
     await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`
@@ -273,6 +279,7 @@ export class AuthSessionService implements OnModuleInit {
   }
 
   private async issueTokenPair(user: AuthUserRecord): Promise<AuthSessionResponse> {
+    await this.cleanupRefreshTokens(new Date());
     const refreshToken = this.generateRefreshToken();
     await this.prisma.refreshToken.create({
       data: {
@@ -354,6 +361,32 @@ export class AuthSessionService implements OnModuleInit {
       ) {
         this.loginAttempts.delete(key);
       }
+    }
+  }
+
+  private async cleanupRefreshTokens(now: Date): Promise<void> {
+    const nowMs = now.getTime();
+    if (nowMs < this.nextRefreshTokenCleanupAt) return;
+    this.nextRefreshTokenCleanupAt = nowMs + REFRESH_TOKEN_CLEANUP_INTERVAL_MS;
+
+    try {
+      const deletedCount = await this.prisma.$executeRaw`
+        DELETE FROM "RefreshToken"
+        WHERE "id" IN (
+          SELECT "id"
+          FROM "RefreshToken"
+          WHERE "expiresAt" <= ${now}
+             OR "revokedAt" IS NOT NULL
+          ORDER BY "id" ASC
+          LIMIT ${REFRESH_TOKEN_CLEANUP_BATCH_SIZE}
+        )
+      `;
+      if (Number(deletedCount) >= REFRESH_TOKEN_CLEANUP_BATCH_SIZE) {
+        this.nextRefreshTokenCleanupAt = nowMs;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown database error";
+      this.logger.warn(`Refresh-token cleanup failed: ${message}`);
     }
   }
 
