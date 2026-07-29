@@ -75,7 +75,51 @@ describe("PrismaReleaseRepository", () => {
     await expect(repository.deleteDownloadRecord(7, 12)).resolves.toBe(true);
 
     expect(transaction.downloadClaim.deleteMany).toHaveBeenCalledWith({
-      where: { userId: 7, magnetKey: "hash:abcdef" },
+      where: {
+        userId: 7,
+        magnetKey: {
+          in: expect.arrayContaining([
+            "hash:abcdef",
+            expect.stringMatching(/^link:[a-f0-9]{32}$/),
+          ]),
+        },
+      },
+    });
+  });
+
+  it("removes the original link claim after Transmission returns a hash for a btmh magnet", async () => {
+    const magnetLink = "magnet:?xt=urn:btmh:1220abcdef";
+    const transaction = {
+      downloadRecord: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            magnetHash: "0123456789ABCDEF",
+            magnetLink,
+          })
+          .mockResolvedValueOnce(null),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      downloadClaim: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 2 }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.deleteDownloadRecord(7, 12)).resolves.toBe(true);
+    expect(transaction.downloadClaim.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 7,
+        magnetKey: {
+          in: expect.arrayContaining([
+            "hash:0123456789abcdef",
+            expect.stringMatching(/^link:[a-f0-9]{32}$/),
+          ]),
+        },
+      },
     });
   });
 

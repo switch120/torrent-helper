@@ -123,7 +123,7 @@ export class FavoritesComponent implements OnInit {
 
   episodeLabel(episode: FavoriteEpisodeSummary | null): string {
     if (!episode) return "Unknown";
-    const number = episode.seasonNumber && episode.episodeNumber
+    const number = episode.seasonNumber !== null && episode.episodeNumber
       ? `S${episode.seasonNumber}:E${episode.episodeNumber}`
       : null;
     return [number, episode.name].filter(Boolean).join(" - ") || "Unknown";
@@ -135,7 +135,10 @@ export class FavoritesComponent implements OnInit {
 
   seasonOptions(show: FavoriteShowSummary): number[] {
     const maxSeason = Math.max(show.numberOfSeasons || 0, show.currentSeasonNumber || 0);
-    return Array.from({ length: maxSeason }, (_, index) => maxSeason - index);
+    return [
+      ...Array.from({ length: maxSeason }, (_, index) => maxSeason - index),
+      0,
+    ];
   }
 
   browserState(showKey: string): FavoriteBrowserState | null {
@@ -236,7 +239,7 @@ export class FavoritesComponent implements OnInit {
 
   async setSeason(show: FavoriteShowSummary, value: string | number): Promise<void> {
     const seasonNumber = Number(value);
-    if (!Number.isInteger(seasonNumber) || seasonNumber <= 0) return;
+    if (!Number.isInteger(seasonNumber) || seasonNumber < 0) return;
     await this.loadSeason(show, seasonNumber);
   }
 

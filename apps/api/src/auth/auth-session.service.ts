@@ -108,8 +108,9 @@ export class AuthSessionService implements OnModuleInit {
     if (existing.rotatedAt) {
       if (now.getTime() - existing.rotatedAt.getTime() > REFRESH_TOKEN_REUSE_GRACE_MS) {
         await this.revokeRefreshTokenLineage(existing.id);
+        throw new UnauthorizedException("Invalid refresh token.");
       }
-      throw new UnauthorizedException("Invalid refresh token.");
+      throw rotatedRefreshTokenException();
     }
 
     const user = await this.prisma.appUser.findUnique({ where: { id: existing.userId } });
@@ -136,6 +137,17 @@ export class AuthSessionService implements OnModuleInit {
         },
       });
       if (claimed.count !== 1) {
+        const current = await transaction.refreshToken.findUnique({
+          where: { id: existing.id },
+          select: { revokedAt: true, rotatedAt: true },
+        });
+        if (
+          !current?.revokedAt &&
+          current?.rotatedAt &&
+          Date.now() - current.rotatedAt.getTime() <= REFRESH_TOKEN_REUSE_GRACE_MS
+        ) {
+          throw rotatedRefreshTokenException();
+        }
         throw new UnauthorizedException("Invalid refresh token.");
       }
 
@@ -518,4 +530,11 @@ export class AuthSessionService implements OnModuleInit {
   private optionalString(value: unknown): string | undefined {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
   }
+}
+
+function rotatedRefreshTokenException(): UnauthorizedException {
+  return new UnauthorizedException({
+    code: "refresh_token_rotated",
+    message: "Invalid refresh token.",
+  });
 }

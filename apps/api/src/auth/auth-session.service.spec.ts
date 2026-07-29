@@ -156,11 +156,13 @@ describe("AuthSessionService", () => {
     };
     const service = new AuthSessionService(prisma as never, passwords);
 
-    await expect(service.refresh("used-refresh-token")).rejects.toEqual(
-      expect.objectContaining<Partial<UnauthorizedException>>({
+    await expect(service.refresh("used-refresh-token")).rejects.toMatchObject({
+      message: "Invalid refresh token.",
+      response: {
+        code: "refresh_token_rotated",
         message: "Invalid refresh token.",
-      }),
-    );
+      },
+    });
 
     expect(prisma.refreshToken.findUnique).toHaveBeenCalledTimes(1);
     expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
@@ -301,6 +303,50 @@ describe("AuthSessionService", () => {
         lastUsedAt: expect.any(Date),
       },
     });
+  });
+
+  it("identifies a refresh token rotated while waiting for the user lock", async () => {
+    const passwords = new PasswordService();
+    const existing = {
+      id: 10,
+      userId: user.id,
+      revokedAt: null,
+      rotatedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const transaction = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: user.id }]),
+      refreshToken: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUnique: vi.fn().mockResolvedValue({
+          revokedAt: null,
+          rotatedAt: new Date(),
+        }),
+        create: vi.fn(),
+      },
+    };
+    const prisma = {
+      appUser: {
+        findUnique: vi.fn().mockResolvedValue(user),
+      },
+      refreshToken: {
+        findUnique: vi.fn().mockResolvedValue(existing),
+      },
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const service = new AuthSessionService(prisma as never, passwords);
+
+    await expect(service.refresh("concurrent-refresh-token")).rejects.toMatchObject({
+      response: {
+        code: "refresh_token_rotated",
+        message: "Invalid refresh token.",
+      },
+    });
+    expect(transaction.refreshToken.findUnique).toHaveBeenCalledWith({
+      where: { id: existing.id },
+      select: { revokedAt: true, rotatedAt: true },
+    });
+    expect(transaction.refreshToken.create).not.toHaveBeenCalled();
   });
 
   it("serializes logout and revokes the rotated refresh-token lineage", async () => {

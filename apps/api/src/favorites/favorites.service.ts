@@ -320,8 +320,11 @@ function normalizeEpisodeQuality(value: string): TorrentSearchQuality {
 }
 
 function validateEpisodeNumber(value: number, label: string): void {
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new BadRequestException(`${label} number must be a positive integer.`);
+  const isSeason = label === "Season";
+  if (!Number.isInteger(value) || (isSeason ? value < 0 : value <= 0)) {
+    throw new BadRequestException(
+      `${label} number must be ${isSeason ? "a non-negative" : "a positive"} integer.`,
+    );
   }
 }
 

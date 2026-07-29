@@ -116,6 +116,50 @@ describe("FavoritesComponent episode browser", () => {
       .toContain("Download");
   });
 
+  it("offers TMDB specials and labels season zero episodes", async () => {
+    const fixture = TestBed.createComponent(FavoritesComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector(".episode-browser-toggle") as HTMLButtonElement).click();
+    await fixture.whenStable();
+    api.getFavoriteSeason.mockResolvedValueOnce({
+      showKey: favorite.showKey,
+      seasonNumber: 0,
+      airDate: null,
+      overview: "Special episodes",
+      posterUrl: null,
+      episodes: [{
+        name: "Holiday Special",
+        seasonNumber: 0,
+        episodeNumber: 1,
+        airDate: "2025-12-20",
+        overview: "A special episode",
+      }],
+    });
+
+    await fixture.componentInstance.setSeason(favorite, 0);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.seasonOptions(favorite)).toContain(0);
+    expect(api.getFavoriteSeason).toHaveBeenLastCalledWith("tmdb:100", 0);
+    expect(fixture.componentInstance.browserState(favorite.showKey)?.seasonNumber).toBe(0);
+    expect(fixture.componentInstance.episodeLabel({
+      name: "Holiday Special",
+      seasonNumber: 0,
+      episodeNumber: 1,
+      airDate: "2025-12-20",
+      overview: "A special episode",
+    })).toBe("S0:E1 - Holiday Special");
+    expect(fixture.nativeElement.querySelector(".episode-browser-heading h3")?.textContent)
+      .toContain("Specials");
+    expect(Array.from(
+      fixture.nativeElement.querySelectorAll(".episode-browser-controls option"),
+      (option: Element) => option.textContent,
+    )).toEqual(expect.arrayContaining([expect.stringContaining("Specials")]));
+  });
+
   it("opens an editable TV-path prompt and adds the selected episode torrent", async () => {
     const fixture = TestBed.createComponent(FavoritesComponent);
     fixture.detectChanges();

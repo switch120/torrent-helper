@@ -552,10 +552,14 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         select: { id: true },
       });
       if (!remaining) {
+        const magnetKeys = [
+          downloadClaimKey(record.magnetLink, record.magnetHash),
+          downloadClaimKey(record.magnetLink, null),
+        ];
         await transaction.downloadClaim.deleteMany({
           where: {
             userId,
-            magnetKey: downloadClaimKey(record.magnetLink, record.magnetHash),
+            magnetKey: { in: [...new Set(magnetKeys)] },
           },
         });
       }

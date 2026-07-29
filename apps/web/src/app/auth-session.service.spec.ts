@@ -129,7 +129,10 @@ describe("AuthSessionService", () => {
       refreshToken: "concurrently-rotated-refresh-token",
     };
     staleRefresh.flush(
-      { message: "Invalid refresh token." },
+      {
+        code: "refresh_token_rotated",
+        message: "Invalid refresh token.",
+      },
       { status: 401, statusText: "Unauthorized" },
     );
     await vi.advanceTimersByTimeAsync(1_500);
@@ -147,6 +150,22 @@ describe("AuthSessionService", () => {
     await expect(refreshedAccessToken).resolves.toBe(newerSession.accessToken);
     expect(service.snapshot()).toEqual(newerSession.user);
     expect(service.hasStoredSession()).toBe(true);
+  });
+
+  it("clears a terminally invalid refresh token without waiting for another tab", async () => {
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+
+    const refreshedAccessToken = firstValueFrom(service.refreshAccessToken(true));
+    http.expectOne("/api/auth/refresh").flush(
+      { message: "Invalid refresh token." },
+      { status: 401, statusText: "Unauthorized" },
+    );
+
+    await expect(refreshedAccessToken).rejects.toMatchObject({ status: 401 });
+    expect(service.snapshot()).toBeUndefined();
+    expect(service.hasStoredSession()).toBe(false);
+    expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
   });
 
   it("revokes the newest stored refresh token when another tab rotated it", () => {

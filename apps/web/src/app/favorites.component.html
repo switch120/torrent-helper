@@ -159,7 +159,7 @@
               <div class="episode-browser-heading">
                 <div>
                   <p class="eyebrow">Episode index</p>
-                  <h3>Season {{ browser.seasonNumber }}</h3>
+                  <h3>{{ browser.seasonNumber === 0 ? "Specials" : "Season " + browser.seasonNumber }}</h3>
                   <p>Expand an episode to fetch its five strongest Prowlarr matches.</p>
                 </div>
                 <div class="episode-browser-controls">
@@ -172,7 +172,7 @@
                     >
                       @for (seasonNumber of seasonOptions(show); track seasonNumber) {
                         <option [ngValue]="seasonNumber">
-                          Season {{ seasonNumber }}{{ seasonNumber === show.currentSeasonNumber ? " · Current" : "" }}
+                          {{ seasonNumber === 0 ? "Specials" : "Season " + seasonNumber }}{{ seasonNumber === show.currentSeasonNumber ? " · Current" : "" }}
                         </option>
                       }
                     </select>

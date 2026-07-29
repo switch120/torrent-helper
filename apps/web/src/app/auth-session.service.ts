@@ -1,4 +1,4 @@
-import { HttpClient } from "@angular/common/http";
+import { HttpClient, HttpErrorResponse } from "@angular/common/http";
 import { Injectable, inject } from "@angular/core";
 import {
   BehaviorSubject,
@@ -100,6 +100,7 @@ export class AuthSessionService {
               this.waitForRotatedStoredSession(
                 refreshToken,
                 requestGeneration,
+                isConcurrentRefreshRejection(error),
               ),
             ).pipe(
               switchMap((latestStoredSession) => {
@@ -214,6 +215,7 @@ export class AuthSessionService {
   private async waitForRotatedStoredSession(
     rejectedRefreshToken: string,
     requestGeneration: number,
+    waitForStorageEvent: boolean,
   ): Promise<AuthSessionResponse | undefined> {
     const readCandidate = (): AuthSessionResponse | undefined => {
       const candidate = this.loadStoredSession();
@@ -229,7 +231,7 @@ export class AuthSessionService {
     if (this.sessionGeneration !== requestGeneration) return undefined;
     const existingCandidate = readCandidate();
     if (existingCandidate) return existingCandidate;
-    if (typeof window === "undefined") return undefined;
+    if (!waitForStorageEvent || typeof window === "undefined") return undefined;
 
     return new Promise((resolve) => {
       let settled = false;
@@ -268,4 +270,15 @@ export class AuthSessionService {
   private browserStorage(): Storage | undefined {
     return typeof window === "undefined" ? undefined : window.localStorage;
   }
+}
+
+function isConcurrentRefreshRejection(error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse) || error.status !== 401) return false;
+  const response = error.error;
+  return (
+    typeof response === "object" &&
+    response !== null &&
+    "code" in response &&
+    response.code === "refresh_token_rotated"
+  );
 }

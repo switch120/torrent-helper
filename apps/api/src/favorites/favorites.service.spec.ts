@@ -245,6 +245,51 @@ describe("FavoritesService", () => {
     });
   });
 
+  it("loads TMDB specials as season zero", async () => {
+    const prisma = {
+      favoriteShow: {
+        findUnique: vi.fn().mockResolvedValue({
+          showKey: "tmdb:100",
+          tmdbId: 100,
+          numberOfSeasons: 2,
+        }),
+      },
+    };
+    const tmdb = {
+      isConfigured: vi.fn().mockReturnValue(true),
+      getTvSeasonDetail: vi.fn().mockResolvedValue({
+        season_number: 0,
+        air_date: null,
+        overview: "Special episodes",
+        poster_path: null,
+        episodes: [{
+          name: "Holiday Special",
+          season_number: 0,
+          episode_number: 1,
+          air_date: "2025-12-20",
+          overview: "A special episode",
+        }],
+      }),
+    };
+    const service = new FavoritesService(
+      prisma as never,
+      {} as never,
+      tmdb as never,
+      { searchRelease: vi.fn() } as never,
+      { addDownloadForRelease: vi.fn() } as never,
+    );
+
+    await expect(service.getSeason(7, "tmdb:100", 0)).resolves.toMatchObject({
+      seasonNumber: 0,
+      episodes: [{
+        name: "Holiday Special",
+        seasonNumber: 0,
+        episodeNumber: 1,
+      }],
+    });
+    expect(tmdb.getTvSeasonDetail).toHaveBeenCalledWith(100, 0);
+  });
+
   it("searches a specific favorite episode at 2160p and returns five healthy results", async () => {
     const results = Array.from({ length: 7 }, (_, index) =>
       torrent({
