@@ -9,7 +9,7 @@ import {
 import { TestBed } from "@angular/core/testing";
 import { BrowserTestingModule, platformBrowserTesting } from "@angular/platform-browser/testing";
 import { firstValueFrom } from "rxjs";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthSessionService } from "./auth-session.service";
 
 describe("AuthSessionService", () => {
@@ -49,6 +49,7 @@ describe("AuthSessionService", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     http?.verify();
     localStorage.clear();
     TestBed.resetTestingModule();
@@ -115,7 +116,8 @@ describe("AuthSessionService", () => {
     );
   });
 
-  it("waits for a concurrently rotated cross-tab session before clearing login", async () => {
+  it("waits for a cross-tab storage event beyond the old one-second window", async () => {
+    vi.useFakeTimers();
     service.login("admin", "admin@123").subscribe();
     http.expectOne("/api/auth/login").flush(session);
 
@@ -130,12 +132,17 @@ describe("AuthSessionService", () => {
       { message: "Invalid refresh token." },
       { status: 401, statusText: "Unauthorized" },
     );
-    setTimeout(() => {
-      localStorage.setItem(
-        "release-hub.auth.session.v1",
-        JSON.stringify(newerSession),
-      );
-    }, 10);
+    await vi.advanceTimersByTimeAsync(1_500);
+    localStorage.setItem(
+      "release-hub.auth.session.v1",
+      JSON.stringify(newerSession),
+    );
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: "release-hub.auth.session.v1",
+        newValue: JSON.stringify(newerSession),
+      }),
+    );
 
     await expect(refreshedAccessToken).resolves.toBe(newerSession.accessToken);
     expect(service.snapshot()).toEqual(newerSession.user);

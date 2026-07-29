@@ -196,6 +196,42 @@ describe("ReleaseWorkflowService torrent search", () => {
     expect(repository.saveDownloadRecord).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the same canonical claim key for base32 and hexadecimal btih hashes", async () => {
+    const base32 = "CI2FM6EQCI2FM6EQCI2FM6EQCI2FM6EQ";
+    const hexadecimal = "1234567890123456789012345678901234567890";
+    const magnetLink = `magnet:?xt=urn:btih:${base32}&dn=Episode`;
+    const repository = createRepository();
+    const transmission = {
+      addMagnet: vi.fn(async () => ({
+        id: 44,
+        name: "Example Show S02E03",
+        hashString: hexadecimal,
+        duplicate: false,
+      })),
+      getDownloads: vi.fn(async () => []),
+    };
+    const service = createService(repository, createProwlarr(), transmission);
+
+    await service.addDownloadForRelease(
+      7,
+      release({
+        eventId: "tmdb:100:s2:e3",
+        title: "Example Show",
+        mediaType: "tv",
+      }),
+      { magnetLink, downloadDir: "/data/TV" },
+      { preventDuplicate: true },
+    );
+
+    expect(repository.claimDownload).toHaveBeenCalledWith(
+      7,
+      `hash:${hexadecimal}`,
+    );
+    expect(repository.saveDownloadRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ magnetHash: hexadecimal }),
+    );
+  });
+
   it("releases an episode claim when Transmission rejects the add", async () => {
     const magnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Episode";
     const repository = createRepository();

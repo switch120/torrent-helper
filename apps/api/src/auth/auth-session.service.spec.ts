@@ -199,6 +199,16 @@ describe("AuthSessionService", () => {
 
   it("revokes a refresh-token lineage when reuse occurs outside the tab-race grace period", async () => {
     const passwords = new PasswordService();
+    const transaction = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: user.id }]),
+      refreshToken: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({ replacedByTokenId: 11 })
+          .mockResolvedValueOnce({ replacedByTokenId: null }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
     const prisma = {
       appUser: {
         findUnique: vi.fn(),
@@ -213,10 +223,9 @@ describe("AuthSessionService", () => {
             rotatedAt: new Date(Date.now() - 60_000),
             expiresAt: new Date(Date.now() + 60_000),
           })
-          .mockResolvedValueOnce({ replacedByTokenId: 11 })
-          .mockResolvedValueOnce({ replacedByTokenId: null }),
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          .mockResolvedValueOnce({ userId: user.id }),
       },
+      $transaction: vi.fn(async (callback) => callback(transaction)),
     };
     const service = new AuthSessionService(prisma as never, passwords);
 
@@ -226,12 +235,16 @@ describe("AuthSessionService", () => {
       }),
     );
 
-    expect(prisma.refreshToken.updateMany).toHaveBeenCalledTimes(2);
-    expect(prisma.refreshToken.updateMany).toHaveBeenNthCalledWith(1, {
+    expect(transaction.$queryRaw).toHaveBeenCalledWith(
+      expect.anything(),
+      user.id,
+    );
+    expect(transaction.refreshToken.updateMany).toHaveBeenCalledTimes(2);
+    expect(transaction.refreshToken.updateMany).toHaveBeenNthCalledWith(1, {
       where: { id: 10, revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
-    expect(prisma.refreshToken.updateMany).toHaveBeenNthCalledWith(2, {
+    expect(transaction.refreshToken.updateMany).toHaveBeenNthCalledWith(2, {
       where: { id: 11, revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });

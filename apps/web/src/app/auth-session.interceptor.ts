@@ -16,10 +16,16 @@ export const authSessionInterceptor: HttpInterceptorFn = (request, next) => {
           if (!isExpiredAccessToken(error)) return throwError(() => error);
 
           return auth.refreshAccessToken(true).pipe(
-            switchMap((nextToken) => next(withBearerToken(request, nextToken))),
             catchError((refreshError) => {
               auth.clearSession();
               return throwError(() => refreshError);
+            }),
+            switchMap((nextToken) => {
+              if (!nextToken) {
+                auth.clearSession();
+                return throwError(() => error);
+              }
+              return next(withBearerToken(request, nextToken));
             }),
           );
         }),

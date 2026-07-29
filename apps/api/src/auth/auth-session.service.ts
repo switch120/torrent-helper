@@ -426,23 +426,34 @@ export class AuthSessionService implements OnModuleInit {
   }
 
   private async revokeRefreshTokenLineage(id: number): Promise<void> {
-    const revokedAt = new Date();
-    const seen = new Set<number>();
-    let currentId: number | null = id;
+    const root = await this.prisma.refreshToken.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+    if (!root) return;
 
-    while (currentId && !seen.has(currentId)) {
-      seen.add(currentId);
-      const current: { replacedByTokenId: number | null } | null =
-        await this.prisma.refreshToken.findUnique({
-          where: { id: currentId },
-          select: { replacedByTokenId: true },
+    const revokedAt = new Date();
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT "id" FROM "AppUser" WHERE "id" = ${root.userId} FOR UPDATE
+      `;
+      const seen = new Set<number>();
+      let currentId: number | null = id;
+
+      while (currentId && !seen.has(currentId)) {
+        seen.add(currentId);
+        const current: { replacedByTokenId: number | null } | null =
+          await transaction.refreshToken.findUnique({
+            where: { id: currentId },
+            select: { replacedByTokenId: true },
+          });
+        await transaction.refreshToken.updateMany({
+          where: { id: currentId, revokedAt: null },
+          data: { revokedAt },
         });
-      await this.prisma.refreshToken.updateMany({
-        where: { id: currentId, revokedAt: null },
-        data: { revokedAt },
-      });
-      currentId = current?.replacedByTokenId ?? null;
-    }
+        currentId = current?.replacedByTokenId ?? null;
+      }
+    });
   }
 
   private authenticatedUser(user: AuthUserRecord): AuthenticatedAppUser {

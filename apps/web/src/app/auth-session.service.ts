@@ -29,8 +29,8 @@ type StoredAuthSession = {
 
 const SESSION_STORAGE_KEY = "release-hub.auth.session.v1";
 const ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 30;
-const CROSS_TAB_REFRESH_SYNC_MS = 1_000;
-const CROSS_TAB_REFRESH_POLL_MS = 25;
+const CROSS_TAB_REFRESH_SYNC_MS = 30_000;
+const CROSS_TAB_REFRESH_CANCEL_POLL_MS = 50;
 
 @Injectable({ providedIn: "root" })
 export class AuthSessionService {
@@ -215,9 +215,7 @@ export class AuthSessionService {
     rejectedRefreshToken: string,
     requestGeneration: number,
   ): Promise<AuthSessionResponse | undefined> {
-    const deadline = Date.now() + CROSS_TAB_REFRESH_SYNC_MS;
-    do {
-      if (this.sessionGeneration !== requestGeneration) return undefined;
+    const readCandidate = (): AuthSessionResponse | undefined => {
       const candidate = this.loadStoredSession();
       if (
         candidate?.accessToken &&
@@ -226,11 +224,45 @@ export class AuthSessionService {
       ) {
         return candidate as AuthSessionResponse;
       }
-      await new Promise((resolve) =>
-        setTimeout(resolve, CROSS_TAB_REFRESH_POLL_MS),
+      return undefined;
+    };
+    if (this.sessionGeneration !== requestGeneration) return undefined;
+    const existingCandidate = readCandidate();
+    if (existingCandidate) return existingCandidate;
+    if (typeof window === "undefined") return undefined;
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (session: AuthSessionResponse | undefined): void => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener("storage", onStorage);
+        clearTimeout(timeout);
+        clearInterval(cancellationPoll);
+        resolve(session);
+      };
+      const onStorage = (event: StorageEvent): void => {
+        if (event.key !== SESSION_STORAGE_KEY) return;
+        if (this.sessionGeneration !== requestGeneration) {
+          finish(undefined);
+          return;
+        }
+        const candidate = readCandidate();
+        if (candidate || event.newValue === null) finish(candidate);
+      };
+
+      window.addEventListener("storage", onStorage);
+      const timeout = setTimeout(
+        () => finish(undefined),
+        CROSS_TAB_REFRESH_SYNC_MS,
       );
-    } while (Date.now() < deadline);
-    return undefined;
+      const cancellationPoll = setInterval(() => {
+        if (this.sessionGeneration !== requestGeneration) finish(undefined);
+      }, CROSS_TAB_REFRESH_CANCEL_POLL_MS);
+
+      const candidate = readCandidate();
+      if (candidate) finish(candidate);
+    });
   }
 
   private browserStorage(): Storage | undefined {
