@@ -120,7 +120,9 @@ export class AuthSessionService {
   }
 
   logout(): Observable<void> {
-    const refreshToken = this.sessionSubject.value?.refreshToken;
+    const refreshToken =
+      this.loadStoredSession()?.refreshToken ||
+      this.sessionSubject.value?.refreshToken;
     this.clearSession();
     if (!refreshToken) return of(undefined);
 

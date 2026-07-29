@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Inject, Post } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, Req } from "@nestjs/common";
+import type { Request } from "express";
 import { CurrentUser } from "./current-user.decorator";
 import { AuthSessionService } from "./auth-session.service";
 import type { AuthenticatedAppUser } from "./auth.types";
@@ -10,8 +11,15 @@ export class AuthController {
   ) {}
 
   @Post("login")
-  login(@Body() body: { username?: unknown; password?: unknown }) {
-    return this.authSessions.login(body?.username, body?.password);
+  login(
+    @Body() body: { username?: unknown; password?: unknown },
+    @Req() request: Request,
+  ) {
+    return this.authSessions.login(
+      body?.username,
+      body?.password,
+      request.ip || request.socket.remoteAddress || "unknown",
+    );
   }
 
   @Post("refresh")

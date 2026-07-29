@@ -1,4 +1,4 @@
-import { UnauthorizedException } from "@nestjs/common";
+import { HttpException, UnauthorizedException } from "@nestjs/common";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthSessionService } from "./auth-session.service";
 import { PasswordService } from "./password.service";
@@ -78,6 +78,63 @@ describe("AuthSessionService", () => {
         message: "Invalid username or password.",
       }),
     );
+  });
+
+  it("rate-limits concurrent password guesses by source and account", async () => {
+    const passwords = {
+      verifyPassword: vi.fn(async () => false),
+    };
+    const prisma = {
+      appUser: {
+        findUnique: vi.fn().mockResolvedValue(user),
+      },
+    };
+    const service = new AuthSessionService(prisma as never, passwords as never);
+
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 6 }, () =>
+        service.login("admin", "wrong-password", "192.0.2.15"),
+      ),
+    );
+
+    expect(passwords.verifyPassword).toHaveBeenCalledTimes(5);
+    expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(6);
+    const throttled = attempts.find(
+      (attempt) =>
+        attempt.status === "rejected" &&
+        attempt.reason instanceof HttpException &&
+        attempt.reason.getStatus() === 429,
+    );
+    expect(throttled).toBeDefined();
+  });
+
+  it("clears source and account throttles after a successful login", async () => {
+    const passwords = {
+      verifyPassword: vi.fn(async (_hash: string | null, password: string) =>
+        password === "admin@123",
+      ),
+    };
+    const prisma = {
+      appUser: {
+        findUnique: vi.fn().mockResolvedValue(user),
+      },
+      refreshToken: {
+        create: vi.fn().mockResolvedValue({ id: 10 }),
+      },
+    };
+    const service = new AuthSessionService(prisma as never, passwords as never);
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await expect(
+        service.login("admin", "wrong-password", "192.0.2.15"),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    }
+    await expect(
+      service.login("admin", "admin@123", "192.0.2.15"),
+    ).resolves.toEqual(expect.objectContaining({ user: expect.objectContaining({ id: 1 }) }));
+    await expect(
+      service.login("admin", "wrong-password", "192.0.2.15"),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it("rejects a rotated refresh token without revoking its valid replacement", async () => {

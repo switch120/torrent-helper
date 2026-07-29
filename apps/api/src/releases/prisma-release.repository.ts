@@ -435,6 +435,24 @@ export class PrismaReleaseRepository implements ReleaseRepository {
     return mapDownloadRecord(record);
   }
 
+  async claimDownload(userId: number, magnetKey: string): Promise<boolean> {
+    try {
+      await this.prisma.downloadClaim.create({
+        data: { userId, magnetKey },
+      });
+      return true;
+    } catch (error) {
+      if (isRecord(error) && error.code === "P2002") return false;
+      throw error;
+    }
+  }
+
+  async releaseDownloadClaim(userId: number, magnetKey: string): Promise<void> {
+    await this.prisma.downloadClaim.deleteMany({
+      where: { userId, magnetKey },
+    });
+  }
+
   async getDownloadRecords(userId?: number): Promise<DownloadRecordSnapshot[]> {
     const records = await this.prisma.downloadRecord.findMany({
       where: typeof userId === "number" ? { userId } : undefined,

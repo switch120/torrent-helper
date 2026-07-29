@@ -2,6 +2,37 @@ import { describe, expect, it, vi } from "vitest";
 import { PrismaReleaseRepository } from "./prisma-release.repository";
 
 describe("PrismaReleaseRepository", () => {
+  it("creates and releases atomic user-scoped download claims", async () => {
+    const prisma = {
+      downloadClaim: {
+        create: vi.fn().mockResolvedValue({ userId: 7 }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.claimDownload(7, "hash:abcdef")).resolves.toBe(true);
+    await repository.releaseDownloadClaim(7, "hash:abcdef");
+
+    expect(prisma.downloadClaim.create).toHaveBeenCalledWith({
+      data: { userId: 7, magnetKey: "hash:abcdef" },
+    });
+    expect(prisma.downloadClaim.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 7, magnetKey: "hash:abcdef" },
+    });
+  });
+
+  it("returns false when a concurrent download claim already exists", async () => {
+    const prisma = {
+      downloadClaim: {
+        create: vi.fn().mockRejectedValue({ code: "P2002" }),
+      },
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.claimDownload(7, "hash:abcdef")).resolves.toBe(false);
+  });
+
   it("preserves supplemental digital source metadata from cached movie rows", async () => {
     const prisma = {
       tmdbDigitalMovie: {

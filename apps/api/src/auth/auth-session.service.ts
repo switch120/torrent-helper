@@ -1,4 +1,6 @@
 import {
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   OnModuleInit,
@@ -23,6 +25,10 @@ const DEFAULT_LOCAL_USERNAME = "admin";
 const DEFAULT_LOCAL_PASSWORD = "admin@123";
 const DEFAULT_LOCAL_EMAIL = "switch120@gmail.com";
 const LOCAL_ADMIN_KEY = "primary";
+const LOGIN_ATTEMPT_LIMIT = 5;
+const LOGIN_ATTEMPT_WINDOW_MS = 60_000;
+const LOGIN_BACKOFF_MS = 60_000;
+const LOGIN_ATTEMPT_STATE_LIMIT = 10_000;
 
 type AccessTokenPayload = {
   iss: string;
@@ -41,8 +47,17 @@ type AuthUserRecord = {
   pictureUrl: string | null;
 };
 
+type LoginAttemptState = {
+  attempts: number;
+  windowStartedAt: number;
+  blockedUntil: number;
+};
+
 @Injectable()
 export class AuthSessionService implements OnModuleInit {
+  private readonly loginAttempts = new Map<string, LoginAttemptState>();
+  private nextLoginAttemptCleanupAt = 0;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(PasswordService) private readonly passwords: PasswordService,
@@ -52,17 +67,24 @@ export class AuthSessionService implements OnModuleInit {
     await this.ensureLocalAdmin();
   }
 
-  async login(usernameValue: unknown, passwordValue: unknown): Promise<AuthSessionResponse> {
+  async login(
+    usernameValue: unknown,
+    passwordValue: unknown,
+    sourceValue: unknown = "unknown",
+  ): Promise<AuthSessionResponse> {
     const username = this.normalizedUsername(usernameValue);
     const password = typeof passwordValue === "string" ? passwordValue : "";
+    const attemptKeys = this.claimLoginAttempt(username, sourceValue);
     const user = username
       ? await this.prisma.appUser.findUnique({ where: { username } })
       : null;
 
     if (!user || !(await this.passwords.verifyPassword(user.passwordHash, password))) {
+      this.recordLoginFailure(attemptKeys);
       throw new UnauthorizedException("Invalid username or password.");
     }
 
+    this.clearLoginAttempts(attemptKeys);
     return this.issueTokenPair(user);
   }
 
@@ -228,6 +250,86 @@ export class AuthSessionService implements OnModuleInit {
       refreshToken,
       user: this.authenticatedUser(user),
     };
+  }
+
+  private claimLoginAttempt(
+    username: string | undefined,
+    sourceValue: unknown,
+  ): string[] {
+    const now = Date.now();
+    this.cleanupLoginAttempts(now);
+    const source = this.optionalString(sourceValue) || "unknown";
+    const keys = [`source:${source}`, `account:${username || "<missing>"}`];
+    let retryAfterMs = 0;
+
+    for (const key of keys) {
+      const state = this.loginAttempts.get(key);
+      if (!state) continue;
+      if (state.blockedUntil > now) {
+        retryAfterMs = Math.max(retryAfterMs, state.blockedUntil - now);
+      } else if (
+        state.attempts >= LOGIN_ATTEMPT_LIMIT &&
+        now - state.windowStartedAt < LOGIN_ATTEMPT_WINDOW_MS
+      ) {
+        retryAfterMs = Math.max(
+          retryAfterMs,
+          LOGIN_ATTEMPT_WINDOW_MS - (now - state.windowStartedAt),
+        );
+      }
+    }
+
+    if (retryAfterMs > 0 || this.loginAttempts.size >= LOGIN_ATTEMPT_STATE_LIMIT) {
+      throw this.tooManyLoginAttempts(retryAfterMs || LOGIN_BACKOFF_MS);
+    }
+
+    for (const key of keys) {
+      const current = this.loginAttempts.get(key);
+      const state = !current || now - current.windowStartedAt >= LOGIN_ATTEMPT_WINDOW_MS
+        ? { attempts: 0, windowStartedAt: now, blockedUntil: 0 }
+        : current;
+      state.attempts += 1;
+      this.loginAttempts.set(key, state);
+    }
+    return keys;
+  }
+
+  private recordLoginFailure(keys: string[]): void {
+    const blockedUntil = Date.now() + LOGIN_BACKOFF_MS;
+    for (const key of keys) {
+      const state = this.loginAttempts.get(key);
+      if (state && state.attempts >= LOGIN_ATTEMPT_LIMIT) {
+        state.blockedUntil = blockedUntil;
+      }
+    }
+  }
+
+  private clearLoginAttempts(keys: string[]): void {
+    for (const key of keys) this.loginAttempts.delete(key);
+  }
+
+  private cleanupLoginAttempts(now: number): void {
+    if (now < this.nextLoginAttemptCleanupAt) return;
+    this.nextLoginAttemptCleanupAt = now + LOGIN_ATTEMPT_WINDOW_MS;
+    for (const [key, state] of this.loginAttempts) {
+      if (
+        state.blockedUntil <= now &&
+        now - state.windowStartedAt >= LOGIN_ATTEMPT_WINDOW_MS
+      ) {
+        this.loginAttempts.delete(key);
+      }
+    }
+  }
+
+  private tooManyLoginAttempts(retryAfterMs: number): HttpException {
+    return new HttpException(
+      {
+        statusCode: HttpStatus.TOO_MANY_REQUESTS,
+        error: "Too Many Requests",
+        message: "Too many login attempts. Try again later.",
+        retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   private signAccessToken(user: AuthUserRecord): string {

@@ -116,4 +116,26 @@ describe("AuthSessionService", () => {
       "\"refreshToken\":\"rotated-refresh-token\"",
     );
   });
+
+  it("revokes the newest stored refresh token when another tab rotated it", () => {
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+    localStorage.setItem(
+      "release-hub.auth.session.v1",
+      JSON.stringify({
+        ...session,
+        refreshToken: "rotated-refresh-token",
+      }),
+    );
+
+    service.logout().subscribe();
+
+    const request = http.expectOne("/api/auth/logout");
+    expect(request.request.body).toEqual({
+      refreshToken: "rotated-refresh-token",
+    });
+    request.flush({ loggedOut: true });
+    expect(service.hasStoredSession()).toBe(false);
+    expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
+  });
 });

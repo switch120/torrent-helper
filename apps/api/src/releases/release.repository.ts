@@ -87,6 +87,8 @@ export interface ReleaseRepository {
     downloadDir: string;
     status: DownloadHistoryStatus;
   }): Promise<DownloadRecordSnapshot>;
+  claimDownload(userId: number, magnetKey: string): Promise<boolean>;
+  releaseDownloadClaim(userId: number, magnetKey: string): Promise<void>;
   getDownloadRecords(userId?: number): Promise<DownloadRecordSnapshot[]>;
   findDownloadRecordByMagnet(
     userId: number,

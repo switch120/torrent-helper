@@ -138,20 +138,30 @@ model DownloadRecord {
   @@index([status])
 }
 
+model DownloadClaim {
+  userId    Int
+  magnetKey String
+  createdAt DateTime @default(now())
+  user      AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, magnetKey])
+}
+
 model AppUser {
-  id            Int              @id @default(autoincrement())
-  localAuthKey  String?          @unique
-  username      String           @unique
-  passwordHash  String?
-  email         String           @unique
-  name          String?
-  pictureUrl    String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  settings      UserSettings?
-  favorites     FavoriteShow[]
-  downloads     DownloadRecord[]
-  refreshTokens RefreshToken[]
+  id             Int              @id @default(autoincrement())
+  localAuthKey   String?          @unique
+  username       String           @unique
+  passwordHash   String?
+  email          String           @unique
+  name           String?
+  pictureUrl     String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  settings       UserSettings?
+  favorites      FavoriteShow[]
+  downloads      DownloadRecord[]
+  downloadClaims DownloadClaim[]
+  refreshTokens  RefreshToken[]
 }
 
 model RefreshToken {
