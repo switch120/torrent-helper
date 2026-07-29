@@ -15,6 +15,7 @@ import type { ReleaseDetail } from "./release-detail.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
 const tmdbDigitalDatePolicy = "original-us-digital-only-v3";
+const downloadClaimStaleMs = 10 * 60 * 1000;
 
 @Injectable()
 export class PrismaReleaseRepository implements ReleaseRepository {
@@ -437,6 +438,36 @@ export class PrismaReleaseRepository implements ReleaseRepository {
   }
 
   async claimDownload(userId: number, magnetKey: string): Promise<boolean> {
+    try {
+      await this.prisma.downloadClaim.create({
+        data: { userId, magnetKey },
+      });
+      return true;
+    } catch (error) {
+      if (!isRecord(error) || error.code !== "P2002") throw error;
+    }
+
+    const staleBefore = new Date(Date.now() - downloadClaimStaleMs);
+    const released = await this.prisma.$executeRaw(Prisma.sql`
+      DELETE FROM "DownloadClaim" AS c
+      WHERE c."userId" = ${userId}
+        AND c."magnetKey" = ${magnetKey}
+        AND c."createdAt" <= ${staleBefore}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "DownloadRecord" AS d
+          WHERE d."userId" = c."userId"
+            AND (
+              (
+                d."magnetHash" IS NOT NULL
+                AND c."magnetKey" = CONCAT('hash:', LOWER(d."magnetHash"))
+              )
+              OR c."magnetKey" = CONCAT('link:', MD5(d."magnetLink"))
+            )
+        )
+    `);
+    if (released !== 1) return false;
+
     try {
       await this.prisma.downloadClaim.create({
         data: { userId, magnetKey },

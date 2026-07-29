@@ -27,10 +27,28 @@ describe("PrismaReleaseRepository", () => {
       downloadClaim: {
         create: vi.fn().mockRejectedValue({ code: "P2002" }),
       },
+      $executeRaw: vi.fn().mockResolvedValue(0),
     };
     const repository = new PrismaReleaseRepository(prisma as never);
 
     await expect(repository.claimDownload(7, "hash:abcdef")).resolves.toBe(false);
+  });
+
+  it("recovers a stale orphan claim before retrying the atomic create", async () => {
+    const prisma = {
+      downloadClaim: {
+        create: vi
+          .fn()
+          .mockRejectedValueOnce({ code: "P2002" })
+          .mockResolvedValueOnce({ userId: 7 }),
+      },
+      $executeRaw: vi.fn().mockResolvedValue(1),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.claimDownload(7, "hash:abcdef")).resolves.toBe(true);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.downloadClaim.create).toHaveBeenCalledTimes(2);
   });
 
   it("removes the download claim when deleting its last history record", async () => {

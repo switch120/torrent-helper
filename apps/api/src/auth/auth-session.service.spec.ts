@@ -167,6 +167,36 @@ describe("AuthSessionService", () => {
     expect(prisma.appUser.findUnique).not.toHaveBeenCalled();
   });
 
+  it("rejects an already-revoked refresh token without walking its lineage", async () => {
+    const passwords = new PasswordService();
+    const prisma = {
+      appUser: {
+        findUnique: vi.fn(),
+      },
+      refreshToken: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 10,
+          userId: user.id,
+          revokedAt: new Date(),
+          rotatedAt: new Date(Date.now() - 60_000),
+          expiresAt: new Date(Date.now() + 60_000),
+        }),
+        updateMany: vi.fn(),
+      },
+    };
+    const service = new AuthSessionService(prisma as never, passwords);
+
+    await expect(service.refresh("revoked-refresh-token")).rejects.toEqual(
+      expect.objectContaining<Partial<UnauthorizedException>>({
+        message: "Invalid refresh token.",
+      }),
+    );
+
+    expect(prisma.refreshToken.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    expect(prisma.appUser.findUnique).not.toHaveBeenCalled();
+  });
+
   it("revokes a refresh-token lineage when reuse occurs outside the tab-race grace period", async () => {
     const passwords = new PasswordService();
     const prisma = {

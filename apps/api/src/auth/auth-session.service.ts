@@ -98,7 +98,10 @@ export class AuthSessionService implements OnModuleInit {
     if (!existing) throw new UnauthorizedException("Invalid refresh token.");
 
     const now = new Date();
-    if (existing.revokedAt || existing.expiresAt <= now) {
+    if (existing.revokedAt) {
+      throw new UnauthorizedException("Invalid refresh token.");
+    }
+    if (existing.expiresAt <= now) {
       await this.revokeRefreshTokenLineage(existing.id);
       throw new UnauthorizedException("Invalid refresh token.");
     }
