@@ -14,7 +14,7 @@ The release hub is an additive local web app. It runs a NestJS API, Angular UI, 
 * Copy `.env.example` to `.env`.
 * Add your VPN provider credentials and settings to `.env`.
 * Add `TMDB_API_KEY` or `TMDB_READ_ACCESS_TOKEN` to `.env` for weekly movie and TV release data.
-* The local release hub signs in with `admin` / `admin@123` by default. Change `LOCAL_AUTH_PASSWORD` and `AUTH_ACCESS_TOKEN_SECRET` before exposing it beyond your own machine.
+* The local release hub signs in with `admin` / `admin@123` by default. Change `LOCAL_AUTH_PASSWORD`, `AUTH_ACCESS_TOKEN_SECRET`, and `AUTH_REFRESH_TOKEN_ROTATION_SECRET` before exposing it beyond your own machine; keep the rotation secret stable across deployments so interrupted refresh requests remain recoverable.
 * Add `PROWLARR_API_KEY` after configuring Prowlarr indexers if you want torrent search.
 * Add `OPENAI_API_KEY` only if you want optional torrent result reranking, then set `OPENAI_TORRENT_RERANK_ENABLED=true`. Torrent titles and metadata are sent to OpenAI; magnet links are not sent.
 * Confirm the `trans-data` NFS volume in `docker-compose.yml` points at the intended storage location.

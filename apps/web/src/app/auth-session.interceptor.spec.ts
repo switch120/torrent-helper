@@ -71,4 +71,59 @@ describe("authSessionInterceptor", () => {
     await expect(result).rejects.toBe(refreshFailure);
     expect(auth.clearSession).toHaveBeenCalledTimes(1);
   });
+
+  it("refreshes once when an unexpired access token receives a generic 401", async () => {
+    const rejected = new HttpErrorResponse({
+      status: 401,
+      error: { message: "Invalid access token" },
+    });
+    const auth = {
+      ensureAccessToken: vi.fn(() => of("still-unexpired-token")),
+      refreshAccessToken: vi.fn(() => of("newly-signed-token")),
+      clearSession: vi.fn(),
+    };
+    const next = vi.fn(() => throwError(() => rejected));
+    const request = new HttpRequest("GET", "/api/auth/me");
+    const injector = Injector.create({
+      providers: [{ provide: AuthSessionService, useValue: auth }],
+    });
+
+    const result = runInInjectionContext(injector, () =>
+      firstValueFrom(authSessionInterceptor(request, next)),
+    );
+
+    await expect(result).rejects.toBe(rejected);
+    expect(auth.refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledTimes(2);
+    expect(next.mock.calls[1]?.[0].headers.get("Authorization")).toBe(
+      "Bearer newly-signed-token",
+    );
+    expect(auth.clearSession).not.toHaveBeenCalled();
+  });
+
+  it("preserves the session when the retry refresh fails transiently", async () => {
+    const rejected = new HttpErrorResponse({ status: 401 });
+    const refreshFailure = new HttpErrorResponse({
+      status: 503,
+      error: { message: "Temporarily unavailable" },
+    });
+    const auth = {
+      ensureAccessToken: vi.fn(() => of("rejected-token")),
+      refreshAccessToken: vi.fn(() => throwError(() => refreshFailure)),
+      clearSession: vi.fn(),
+    };
+    const next = vi.fn(() => throwError(() => rejected));
+    const request = new HttpRequest("GET", "/api/favorites");
+    const injector = Injector.create({
+      providers: [{ provide: AuthSessionService, useValue: auth }],
+    });
+
+    const result = runInInjectionContext(injector, () =>
+      firstValueFrom(authSessionInterceptor(request, next)),
+    );
+
+    await expect(result).rejects.toBe(refreshFailure);
+    expect(auth.refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(auth.clearSession).not.toHaveBeenCalled();
+  });
 });

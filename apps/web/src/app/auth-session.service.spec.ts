@@ -231,6 +231,35 @@ describe("AuthSessionService", () => {
     );
   });
 
+  it("merges a cross-tab token rotation before storing the user snapshot", async () => {
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+    const rotatedSession = {
+      ...session,
+      accessToken: "header.eyJleHAiOjQxMDI0NDQ4MDB9.cross-tab",
+      refreshToken: "cross-tab-refresh-token",
+    };
+    localStorage.setItem(
+      "release-hub.auth.session.v1",
+      JSON.stringify(rotatedSession),
+    );
+
+    service.storeUserSnapshot({
+      ...session.user,
+      name: "Updated profile",
+    });
+
+    const stored = JSON.parse(
+      localStorage.getItem("release-hub.auth.session.v1") || "{}",
+    ) as typeof rotatedSession;
+    expect(stored.refreshToken).toBe(rotatedSession.refreshToken);
+    expect(stored.accessToken).toBe(rotatedSession.accessToken);
+    expect(stored.user.name).toBe("Updated profile");
+    await expect(firstValueFrom(service.ensureAccessToken())).resolves.toBe(
+      rotatedSession.accessToken,
+    );
+  });
+
   it("revokes the newest stored refresh token when another tab rotated it", () => {
     service.login("admin", "admin@123").subscribe();
     http.expectOne("/api/auth/login").flush(session);

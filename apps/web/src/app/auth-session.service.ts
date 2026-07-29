@@ -166,11 +166,23 @@ export class AuthSessionService {
   }
 
   storeUserSnapshot(user: AuthenticatedUser): void {
-    const session = this.sessionSubject.value;
+    const currentSession = this.sessionSubject.value;
+    const storedSession = this.loadStoredSession();
+    if (this.storage && !storedSession) {
+      this.clearSession();
+      return;
+    }
+    const session = storedSession || currentSession;
     if (!session) return;
+    const accessToken =
+      session.accessToken ||
+      (session.refreshToken === currentSession?.refreshToken
+        ? this.accessToken
+        : undefined);
+    this.accessToken = accessToken;
     this.persistSession({
       ...session,
-      accessToken: this.accessToken || session.accessToken,
+      accessToken,
       user,
     });
   }

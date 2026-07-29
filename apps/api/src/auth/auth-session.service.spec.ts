@@ -1,4 +1,5 @@
 import { HttpException, UnauthorizedException } from "@nestjs/common";
+import { createHash, createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthSessionService } from "./auth-session.service";
 import { PasswordService } from "./password.service";
@@ -16,12 +17,15 @@ describe("AuthSessionService", () => {
 
   beforeEach(() => {
     process.env.AUTH_ACCESS_TOKEN_SECRET = "test-release-hub-secret";
+    process.env.AUTH_REFRESH_TOKEN_ROTATION_SECRET =
+      "test-refresh-token-rotation-secret";
     delete process.env.LOCAL_AUTH_USERNAME;
     delete process.env.LOCAL_AUTH_PASSWORD;
     delete process.env.LOCAL_AUTH_EMAIL;
   });
 
   afterEach(() => {
+    delete process.env.AUTH_REFRESH_TOKEN_ROTATION_SECRET;
     delete process.env.LOCAL_AUTH_USERNAME;
     delete process.env.LOCAL_AUTH_PASSWORD;
     delete process.env.LOCAL_AUTH_EMAIL;
@@ -166,36 +170,46 @@ describe("AuthSessionService", () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it("rejects a rotated refresh token without revoking its valid replacement", async () => {
+  it("recovers a rotated replacement when a refresh response is lost", async () => {
     const passwords = new PasswordService();
+    const refreshToken = "used-refresh-token";
+    const replacementToken = derivedReplacement(refreshToken);
     const prisma = {
       appUser: {
-        findUnique: vi.fn(),
+        findUnique: vi.fn().mockResolvedValue(user),
       },
       refreshToken: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: 10,
-          userId: user.id,
-          revokedAt: null,
-          rotatedAt: new Date(),
-          expiresAt: new Date(Date.now() + 60_000),
-        }),
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({
+            id: 10,
+            userId: user.id,
+            revokedAt: null,
+            rotatedAt: new Date(),
+            expiresAt: new Date(Date.now() + 60_000),
+            replacedByTokenId: 11,
+          })
+          .mockResolvedValueOnce({
+            tokenHash: refreshTokenHash(replacementToken),
+            revokedAt: null,
+            expiresAt: new Date(Date.now() + 60_000),
+          }),
         updateMany: vi.fn(),
       },
     };
     const service = new AuthSessionService(prisma as never, passwords);
 
-    await expect(service.refresh("used-refresh-token")).rejects.toMatchObject({
-      message: "Invalid refresh token.",
-      response: {
-        code: "refresh_token_rotated",
-        message: "Invalid refresh token.",
-      },
+    await expect(service.refresh(refreshToken)).resolves.toEqual({
+      accessToken: expect.any(String),
+      refreshToken: replacementToken,
+      user: expect.objectContaining({ id: user.id }),
     });
 
-    expect(prisma.refreshToken.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.refreshToken.findUnique).toHaveBeenCalledTimes(2);
     expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
-    expect(prisma.appUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.appUser.findUnique).toHaveBeenCalledWith({
+      where: { id: user.id },
+    });
   });
 
   it("rejects an already-revoked refresh token without walking its lineage", async () => {
@@ -310,12 +324,11 @@ describe("AuthSessionService", () => {
     };
     const service = new AuthSessionService(prisma as never, passwords);
 
-    await expect(service.refresh("valid-refresh-token")).resolves.toEqual(
-      expect.objectContaining({
-        refreshToken: expect.any(String),
-        user: expect.objectContaining({ id: user.id }),
-      }),
-    );
+    await expect(service.refresh("valid-refresh-token")).resolves.toEqual({
+      accessToken: expect.any(String),
+      refreshToken: derivedReplacement("valid-refresh-token"),
+      user: expect.objectContaining({ id: user.id }),
+    });
 
     expect(transaction.$queryRaw).toHaveBeenCalledWith(
       expect.anything(),
@@ -335,8 +348,10 @@ describe("AuthSessionService", () => {
     });
   });
 
-  it("identifies a refresh token rotated while waiting for the user lock", async () => {
+  it("recovers a refresh token rotated while waiting for the user lock", async () => {
     const passwords = new PasswordService();
+    const refreshToken = "concurrent-refresh-token";
+    const replacementToken = derivedReplacement(refreshToken);
     const existing = {
       id: 10,
       userId: user.id,
@@ -348,10 +363,18 @@ describe("AuthSessionService", () => {
       $queryRaw: vi.fn().mockResolvedValue([{ id: user.id }]),
       refreshToken: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-        findUnique: vi.fn().mockResolvedValue({
-          revokedAt: null,
-          rotatedAt: new Date(),
-        }),
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({
+            revokedAt: null,
+            rotatedAt: new Date(),
+            replacedByTokenId: 11,
+          })
+          .mockResolvedValueOnce({
+            tokenHash: refreshTokenHash(replacementToken),
+            revokedAt: null,
+            expiresAt: new Date(Date.now() + 60_000),
+          }),
         create: vi.fn(),
       },
     };
@@ -367,15 +390,18 @@ describe("AuthSessionService", () => {
     };
     const service = new AuthSessionService(prisma as never, passwords);
 
-    await expect(service.refresh("concurrent-refresh-token")).rejects.toMatchObject({
-      response: {
-        code: "refresh_token_rotated",
-        message: "Invalid refresh token.",
-      },
+    await expect(service.refresh(refreshToken)).resolves.toEqual({
+      accessToken: expect.any(String),
+      refreshToken: replacementToken,
+      user: expect.objectContaining({ id: user.id }),
     });
     expect(transaction.refreshToken.findUnique).toHaveBeenCalledWith({
       where: { id: existing.id },
-      select: { revokedAt: true, rotatedAt: true },
+      select: {
+        revokedAt: true,
+        rotatedAt: true,
+        replacedByTokenId: true,
+      },
     });
     expect(transaction.refreshToken.create).not.toHaveBeenCalled();
   });
@@ -511,3 +537,13 @@ describe("AuthSessionService", () => {
     });
   });
 });
+
+function derivedReplacement(refreshToken: string): string {
+  return createHmac("sha384", "test-refresh-token-rotation-secret")
+    .update(`release-hub-refresh-token-replacement-v1:${refreshToken}`)
+    .digest("base64url");
+}
+
+function refreshTokenHash(refreshToken: string): string {
+  return createHash("sha256").update(refreshToken).digest("hex");
+}

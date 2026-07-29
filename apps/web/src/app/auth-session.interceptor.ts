@@ -13,11 +13,13 @@ export const authSessionInterceptor: HttpInterceptorFn = (request, next) => {
     switchMap((token) =>
       next(withBearerToken(request, token)).pipe(
         catchError((error) => {
-          if (!isExpiredAccessToken(error)) return throwError(() => error);
+          if (!isAccessTokenRejection(error)) return throwError(() => error);
 
           return auth.refreshAccessToken(true).pipe(
             catchError((refreshError) => {
-              auth.clearSession();
+              if (isTerminalRefreshFailure(refreshError)) {
+                auth.clearSession();
+              }
               return throwError(() => refreshError);
             }),
             switchMap((nextToken) => {
@@ -46,12 +48,15 @@ function withBearerToken<T>(
   });
 }
 
-function isExpiredAccessToken(error: unknown): boolean {
+function isAccessTokenRejection(error: unknown): boolean {
   return (
     error instanceof HttpErrorResponse &&
-    error.status === 401 &&
-    error.error?.code === "access_token_expired"
+    error.status === 401
   );
+}
+
+function isTerminalRefreshFailure(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && error.status === 401;
 }
 
 function isUnauthenticatedEndpoint(request: HttpRequest<unknown>): boolean {
