@@ -152,6 +152,30 @@ describe("AuthSessionService", () => {
     expect(service.hasStoredSession()).toBe(true);
   });
 
+  it("revokes the rotated lineage when cross-tab synchronization never arrives", async () => {
+    vi.useFakeTimers();
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+
+    const refreshedAccessToken = firstValueFrom(service.refreshAccessToken(true));
+    http.expectOne("/api/auth/refresh").flush(
+      {
+        code: "refresh_token_rotated",
+        message: "Invalid refresh token.",
+      },
+      { status: 401, statusText: "Unauthorized" },
+    );
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    const revocation = http.expectOne("/api/auth/logout");
+    expect(revocation.request.body).toEqual({ refreshToken: "refresh-token" });
+    revocation.flush({ loggedOut: true });
+
+    await expect(refreshedAccessToken).rejects.toMatchObject({ status: 401 });
+    expect(service.hasStoredSession()).toBe(false);
+    expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
+  });
+
   it("clears a terminally invalid refresh token without waiting for another tab", async () => {
     service.login("admin", "admin@123").subscribe();
     http.expectOne("/api/auth/login").flush(session);

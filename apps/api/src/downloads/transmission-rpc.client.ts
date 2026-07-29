@@ -1,5 +1,7 @@
 import type { AddTorrentResult, TransmissionDownload } from "./download.types";
 
+const transmissionRpcRequestTimeoutMs = 60_000;
+
 type TransmissionRpcArguments = Record<string, unknown>;
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -153,6 +155,7 @@ export class TransmissionRpcClient {
       method: "POST",
       headers: this.headers(),
       body,
+      signal: AbortSignal.timeout(transmissionRpcRequestTimeoutMs),
     });
   }
 

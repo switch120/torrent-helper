@@ -265,7 +265,11 @@ function buildSearchQuery(release: NormalizedRelease, quality: TorrentSearchQual
   if (release.mediaType === "movie" && year) {
     parts.push(String(year));
   }
-  if (release.mediaType === "tv" && release.seasonNumber) {
+  if (
+    release.mediaType === "tv" &&
+    release.seasonNumber !== null &&
+    release.seasonNumber !== undefined
+  ) {
     const season = `S${String(release.seasonNumber).padStart(2, "0")}`;
     const episode = release.episodeNumber
       ? `E${String(release.episodeNumber).padStart(2, "0")}`
@@ -392,7 +396,8 @@ function scoreReleaseMatch(
 
   if (
     options.mediaType === "tv" &&
-    options.seasonNumber &&
+    options.seasonNumber !== null &&
+    options.seasonNumber !== undefined &&
     options.episodeNumber &&
     !matchesTvEpisode(torrentTitle, options.seasonNumber, options.episodeNumber)
   ) {

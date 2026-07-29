@@ -95,12 +95,13 @@ export class AuthSessionService {
               this.storeSession(session);
             }
           }),
-          catchError((error) =>
-            from(
+          catchError((error) => {
+            const concurrentRefresh = isConcurrentRefreshRejection(error);
+            return from(
               this.waitForRotatedStoredSession(
                 refreshToken,
                 requestGeneration,
-                isConcurrentRefreshRejection(error),
+                concurrentRefresh,
               ),
             ).pipe(
               switchMap((latestStoredSession) => {
@@ -109,13 +110,25 @@ export class AuthSessionService {
                   this.sessionSubject.next(latestStoredSession);
                   return of(latestStoredSession);
                 }
-                if (this.sessionGeneration === requestGeneration) {
-                  this.clearSession();
+                if (this.sessionGeneration !== requestGeneration) {
+                  return throwError(() => error);
                 }
-                return throwError(() => error);
+                const revokeRotatedLineage = concurrentRefresh
+                  ? this.http.post("/api/auth/logout", { refreshToken }).pipe(
+                      catchError(() => of(undefined)),
+                    )
+                  : of(undefined);
+                return revokeRotatedLineage.pipe(
+                  switchMap(() => {
+                    if (this.sessionGeneration === requestGeneration) {
+                      this.clearSession();
+                    }
+                    return throwError(() => error);
+                  }),
+                );
               }),
-            ),
-          ),
+            );
+          }),
           finalize(() => {
             if (this.refreshRequest === request) {
               this.refreshRequest = undefined;

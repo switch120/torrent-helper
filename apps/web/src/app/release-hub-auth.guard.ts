@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from "@angular/common/http";
 import { inject } from "@angular/core";
 import { CanActivateFn, Router } from "@angular/router";
 import { firstValueFrom, from, timeout } from "rxjs";
@@ -27,10 +28,17 @@ export const releaseHubAuthGuard: CanActivateFn = async (_route, state) => {
     );
     auth.storeUserSnapshot(user);
     return true;
-  } catch {
-    auth.clearSession();
+  } catch (error) {
+    if (isTerminalAuthFailure(error)) auth.clearSession();
     return router.createUrlTree(["/login"], {
       queryParams: { returnUrl: state.url },
     });
   }
 };
+
+function isTerminalAuthFailure(error: unknown): boolean {
+  return (
+    (error instanceof HttpErrorResponse && error.status === 401) ||
+    (error instanceof Error && error.message === "No access token is available.")
+  );
+}

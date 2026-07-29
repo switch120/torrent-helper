@@ -335,6 +335,54 @@ describe("Prowlarr torrent normalization", () => {
     ]);
   });
 
+  it("queries and filters Prowlarr for an exact season-zero special", async () => {
+    const requests: string[] = [];
+    const client = new ProwlarrClient({
+      apiKey: "key",
+      baseUrl: "http://prowlarr.test",
+      fetchImpl: async (url) => {
+        requests.push(String(url));
+        if (url.includes("/api/v1/indexer")) {
+          return new Response(JSON.stringify([{ enable: true }]));
+        }
+        return new Response(JSON.stringify([
+          {
+            title: "Example Show S00E01 2160p WEB-DL",
+            indexer: "Exact special",
+            infoHash: "1111111111111111111111111111111111111111",
+            seeders: 25,
+          },
+          {
+            title: "Example Show S01E01 2160p WEB-DL",
+            indexer: "Ordinary episode",
+            infoHash: "2222222222222222222222222222222222222222",
+            seeders: 250,
+          },
+        ]));
+      },
+    });
+
+    const result = await client.searchRelease(
+      release({
+        title: "Example Show",
+        mediaType: "tv",
+        titleType: "tvSeries",
+        tmdbType: "tv",
+        releaseKind: "streaming",
+        releaseDate: "",
+        seasonNumber: 0,
+        episodeNumber: 1,
+      }),
+      "2160p",
+    );
+
+    const searchRequest = new URL(requests.find((url) => url.includes("/api/v1/search")) || "");
+    expect(searchRequest.searchParams.get("query")).toBe("Example Show S00E01 2160p");
+    expect(result.results.map((torrent) => torrent.title)).toEqual([
+      "Example Show S00E01 2160p WEB-DL",
+    ]);
+  });
+
   it("parses Torznab XML extended attributes", () => {
     const results = parseTorznabXml(`
       <rss><channel>
