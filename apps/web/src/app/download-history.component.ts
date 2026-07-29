@@ -1,5 +1,6 @@
 import { CommonModule } from "@angular/common";
 import { Component, OnInit, inject, signal } from "@angular/core";
+import { isFavoriteEpisodeEventId } from "./favorite-episode-event-id";
 import { ReleaseApiClient } from "./release-api.client";
 import type { DownloadHistoryEntry, DownloadHistoryStatus } from "./release.models";
 
@@ -124,7 +125,11 @@ export class DownloadHistoryComponent implements OnInit {
   }
 
   tmdbUrl(entry: DownloadHistoryEntry): string {
-    const mediaPath = entry.releaseEventId.includes(":tv:") ? "tv" : "movie";
+    const mediaPath =
+      entry.releaseEventId.includes(":tv:") ||
+      isFavoriteEpisodeEventId(entry.releaseEventId)
+        ? "tv"
+        : "movie";
     return `https://www.themoviedb.org/${mediaPath}/${entry.tmdbId}`;
   }
 

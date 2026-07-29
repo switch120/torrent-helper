@@ -237,6 +237,95 @@ describe("AuthSessionService", () => {
     });
   });
 
+  it("serializes refresh rotation on the user row", async () => {
+    const passwords = new PasswordService();
+    const existing = {
+      id: 10,
+      userId: user.id,
+      revokedAt: null,
+      rotatedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const transaction = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: user.id }]),
+      refreshToken: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn().mockResolvedValue({ id: 11 }),
+        update: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+    const prisma = {
+      appUser: {
+        findUnique: vi.fn().mockResolvedValue(user),
+      },
+      refreshToken: {
+        findUnique: vi.fn().mockResolvedValue(existing),
+      },
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const service = new AuthSessionService(prisma as never, passwords);
+
+    await expect(service.refresh("valid-refresh-token")).resolves.toEqual(
+      expect.objectContaining({
+        refreshToken: expect.any(String),
+        user: expect.objectContaining({ id: user.id }),
+      }),
+    );
+
+    expect(transaction.$queryRaw).toHaveBeenCalledWith(
+      expect.anything(),
+      user.id,
+    );
+    expect(transaction.refreshToken.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: existing.id,
+        revokedAt: null,
+        rotatedAt: null,
+        expiresAt: { gt: expect.any(Date) },
+      },
+      data: {
+        rotatedAt: expect.any(Date),
+        lastUsedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("serializes logout and revokes the rotated refresh-token lineage", async () => {
+    const passwords = new PasswordService();
+    const transaction = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: user.id }]),
+      refreshToken: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({ replacedByTokenId: 11 })
+          .mockResolvedValueOnce({ replacedByTokenId: null }),
+        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+      },
+    };
+    const prisma = {
+      refreshToken: {
+        findUnique: vi.fn().mockResolvedValue({ id: 10, userId: user.id }),
+      },
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const service = new AuthSessionService(prisma as never, passwords);
+
+    await service.logout("rotated-refresh-token");
+
+    expect(transaction.$queryRaw).toHaveBeenCalledWith(
+      expect.anything(),
+      user.id,
+    );
+    expect(transaction.refreshToken.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: 10, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(transaction.refreshToken.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { id: 11, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
   it("keeps the migrated account and configured password during bootstrap", async () => {
     const passwords = new PasswordService();
     const storedUser = {

@@ -5,9 +5,11 @@ import {
   Observable,
   catchError,
   finalize,
+  from,
   map,
   of,
   shareReplay,
+  switchMap,
   tap,
   throwError,
 } from "rxjs";
@@ -27,6 +29,8 @@ type StoredAuthSession = {
 
 const SESSION_STORAGE_KEY = "release-hub.auth.session.v1";
 const ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 30;
+const CROSS_TAB_REFRESH_SYNC_MS = 1_000;
+const CROSS_TAB_REFRESH_POLL_MS = 25;
 
 @Injectable({ providedIn: "root" })
 export class AuthSessionService {
@@ -91,20 +95,26 @@ export class AuthSessionService {
               this.storeSession(session);
             }
           }),
-          catchError((error) => {
-            const latestStoredSession = this.loadStoredSession();
-            if (
-              latestStoredSession?.accessToken &&
-              latestStoredSession.user &&
-              latestStoredSession.refreshToken !== refreshToken
-            ) {
-              this.accessToken = latestStoredSession.accessToken;
-              this.sessionSubject.next(latestStoredSession);
-              return of(latestStoredSession as AuthSessionResponse);
-            }
-            this.clearSession();
-            return throwError(() => error);
-          }),
+          catchError((error) =>
+            from(
+              this.waitForRotatedStoredSession(
+                refreshToken,
+                requestGeneration,
+              ),
+            ).pipe(
+              switchMap((latestStoredSession) => {
+                if (latestStoredSession) {
+                  this.accessToken = latestStoredSession.accessToken;
+                  this.sessionSubject.next(latestStoredSession);
+                  return of(latestStoredSession);
+                }
+                if (this.sessionGeneration === requestGeneration) {
+                  this.clearSession();
+                }
+                return throwError(() => error);
+              }),
+            ),
+          ),
           finalize(() => {
             if (this.refreshRequest === request) {
               this.refreshRequest = undefined;
@@ -199,6 +209,28 @@ export class AuthSessionService {
       this.storage?.removeItem(SESSION_STORAGE_KEY);
       return undefined;
     }
+  }
+
+  private async waitForRotatedStoredSession(
+    rejectedRefreshToken: string,
+    requestGeneration: number,
+  ): Promise<AuthSessionResponse | undefined> {
+    const deadline = Date.now() + CROSS_TAB_REFRESH_SYNC_MS;
+    do {
+      if (this.sessionGeneration !== requestGeneration) return undefined;
+      const candidate = this.loadStoredSession();
+      if (
+        candidate?.accessToken &&
+        candidate.user &&
+        candidate.refreshToken !== rejectedRefreshToken
+      ) {
+        return candidate as AuthSessionResponse;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, CROSS_TAB_REFRESH_POLL_MS),
+      );
+    } while (Date.now() < deadline);
+    return undefined;
   }
 
   private browserStorage(): Storage | undefined {

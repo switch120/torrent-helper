@@ -120,6 +120,9 @@ export class AuthSessionService implements OnModuleInit {
 
     const nextRefreshToken = this.generateRefreshToken();
     await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT "id" FROM "AppUser" WHERE "id" = ${user.id} FOR UPDATE
+      `;
       const claimed = await transaction.refreshToken.updateMany({
         where: {
           id: existing.id,
@@ -160,12 +163,31 @@ export class AuthSessionService implements OnModuleInit {
     const refreshToken = this.optionalString(refreshTokenValue);
     if (!refreshToken) return;
 
-    await this.prisma.refreshToken.updateMany({
-      where: {
-        tokenHash: this.hashRefreshToken(refreshToken),
-        revokedAt: null,
-      },
-      data: { revokedAt: new Date() },
+    const existing = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: this.hashRefreshToken(refreshToken) },
+    });
+    if (!existing) return;
+
+    const revokedAt = new Date();
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT "id" FROM "AppUser" WHERE "id" = ${existing.userId} FOR UPDATE
+      `;
+      const seen = new Set<number>();
+      let currentId: number | null = existing.id;
+      while (currentId && !seen.has(currentId)) {
+        seen.add(currentId);
+        const current: { replacedByTokenId: number | null } | null =
+          await transaction.refreshToken.findUnique({
+            where: { id: currentId },
+            select: { replacedByTokenId: true },
+          });
+        await transaction.refreshToken.updateMany({
+          where: { id: currentId, revokedAt: null },
+          data: { revokedAt },
+        });
+        currentId = current?.replacedByTokenId ?? null;
+      }
     });
   }
 

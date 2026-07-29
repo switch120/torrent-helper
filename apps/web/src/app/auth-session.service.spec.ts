@@ -8,6 +8,7 @@ import {
 } from "@angular/common/http/testing";
 import { TestBed } from "@angular/core/testing";
 import { BrowserTestingModule, platformBrowserTesting } from "@angular/platform-browser/testing";
+import { firstValueFrom } from "rxjs";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AuthSessionService } from "./auth-session.service";
 
@@ -84,14 +85,11 @@ describe("AuthSessionService", () => {
     expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
   });
 
-  it("adopts a newer session from another tab when a stale refresh is rejected", () => {
+  it("adopts a newer session from another tab when a stale refresh is rejected", async () => {
     service.login("admin", "admin@123").subscribe();
     http.expectOne("/api/auth/login").flush(session);
 
-    let refreshedAccessToken: string | undefined;
-    service.refreshAccessToken(true).subscribe((accessToken) => {
-      refreshedAccessToken = accessToken;
-    });
+    const refreshedAccessToken = firstValueFrom(service.refreshAccessToken(true));
     const staleRefresh = http.expectOne("/api/auth/refresh");
     expect(staleRefresh.request.body).toEqual({ refreshToken: "refresh-token" });
 
@@ -109,12 +107,39 @@ describe("AuthSessionService", () => {
       { status: 401, statusText: "Unauthorized" },
     );
 
-    expect(refreshedAccessToken).toBe(newerSession.accessToken);
+    await expect(refreshedAccessToken).resolves.toBe(newerSession.accessToken);
     expect(service.snapshot()).toEqual(newerSession.user);
     expect(service.hasStoredSession()).toBe(true);
     expect(localStorage.getItem("release-hub.auth.session.v1")).toContain(
       "\"refreshToken\":\"rotated-refresh-token\"",
     );
+  });
+
+  it("waits for a concurrently rotated cross-tab session before clearing login", async () => {
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+
+    const refreshedAccessToken = firstValueFrom(service.refreshAccessToken(true));
+    const staleRefresh = http.expectOne("/api/auth/refresh");
+    const newerSession = {
+      ...session,
+      accessToken: "header.eyJleHAiOjQxMDI0NDQ4MDB9.concurrent",
+      refreshToken: "concurrently-rotated-refresh-token",
+    };
+    staleRefresh.flush(
+      { message: "Invalid refresh token." },
+      { status: 401, statusText: "Unauthorized" },
+    );
+    setTimeout(() => {
+      localStorage.setItem(
+        "release-hub.auth.session.v1",
+        JSON.stringify(newerSession),
+      );
+    }, 10);
+
+    await expect(refreshedAccessToken).resolves.toBe(newerSession.accessToken);
+    expect(service.snapshot()).toEqual(newerSession.user);
+    expect(service.hasStoredSession()).toBe(true);
   });
 
   it("revokes the newest stored refresh token when another tab rotated it", () => {

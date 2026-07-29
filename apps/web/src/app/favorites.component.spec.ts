@@ -236,7 +236,134 @@ describe("FavoritesComponent episode browser", () => {
     expect(button.textContent).toContain("Downloading");
     expect(fixture.nativeElement.querySelector(".episode-torrent-row.is-download-known")).not.toBeNull();
   });
+
+  it("keeps the newest repeated episode search when responses finish out of order", async () => {
+    const fixture = TestBed.createComponent(FavoritesComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector(".episode-browser-toggle") as HTMLButtonElement).click();
+    await fixture.whenStable();
+
+    const firstSearch = deferred<{ results: TorrentResult[]; warning: null }>();
+    const secondSearch = deferred<{ results: TorrentResult[]; warning: null }>();
+    const olderTorrent = {
+      ...torrent(),
+      title: "Older search result",
+      magnetLink: "magnet:?xt=urn:btih:older",
+    };
+    const newerTorrent = {
+      ...torrent(),
+      title: "Newest search result",
+      magnetLink: "magnet:?xt=urn:btih:newer",
+    };
+    api.searchFavoriteEpisodeTorrents
+      .mockReset()
+      .mockReturnValueOnce(firstSearch.promise)
+      .mockReturnValueOnce(secondSearch.promise);
+
+    const olderRequest = fixture.componentInstance.searchEpisodeTorrents(favorite, 1);
+    const newerRequest = fixture.componentInstance.searchEpisodeTorrents(favorite, 1);
+    secondSearch.resolve({ results: [newerTorrent], warning: null });
+    await newerRequest;
+    firstSearch.resolve({ results: [olderTorrent], warning: null });
+    await olderRequest;
+
+    const state = fixture.componentInstance.episodeTorrentState(
+      favorite.showKey,
+      1,
+    );
+    expect(state?.results.map((result) => result.title)).toEqual([
+      "Newest search result",
+    ]);
+    expect(state?.downloadStates[newerTorrent.magnetLink]?.status).toBe(
+      "available",
+    );
+    expect(state?.downloadStates[olderTorrent.magnetLink]).toBeUndefined();
+    fixture.destroy();
+  });
+
+  it("discards duplicate checks from a superseded episode search", async () => {
+    const fixture = TestBed.createComponent(FavoritesComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector(".episode-browser-toggle") as HTMLButtonElement).click();
+    await fixture.whenStable();
+
+    const firstSearch = deferred<{ results: TorrentResult[]; warning: null }>();
+    const secondSearch = deferred<{ results: TorrentResult[]; warning: null }>();
+    const staleDuplicate = deferred<{
+      duplicate: boolean;
+      historyRecord: { status: "pending" };
+      warning: string;
+    }>();
+    const olderTorrent = {
+      ...torrent(),
+      title: "Older search result",
+      magnetLink: "magnet:?xt=urn:btih:older",
+    };
+    const newerTorrent = {
+      ...torrent(),
+      title: "Newest search result",
+      magnetLink: "magnet:?xt=urn:btih:newer",
+    };
+    api.searchFavoriteEpisodeTorrents
+      .mockReset()
+      .mockReturnValueOnce(firstSearch.promise)
+      .mockReturnValueOnce(secondSearch.promise);
+    api.checkDownloadDuplicate.mockImplementation((magnetLink: string) =>
+      magnetLink === olderTorrent.magnetLink
+        ? staleDuplicate.promise
+        : Promise.resolve({
+            duplicate: false,
+            historyRecord: null,
+            warning: null,
+          }),
+    );
+
+    const olderRequest = fixture.componentInstance.searchEpisodeTorrents(favorite, 1);
+    firstSearch.resolve({ results: [olderTorrent], warning: null });
+    await vi.waitFor(() =>
+      expect(api.checkDownloadDuplicate).toHaveBeenCalledWith(
+        olderTorrent.magnetLink,
+      ),
+    );
+    const newerRequest = fixture.componentInstance.searchEpisodeTorrents(favorite, 1);
+    secondSearch.resolve({ results: [newerTorrent], warning: null });
+    await newerRequest;
+    staleDuplicate.resolve({
+      duplicate: true,
+      historyRecord: { status: "pending" },
+      warning: "Already added.",
+    });
+    await olderRequest;
+
+    const state = fixture.componentInstance.episodeTorrentState(
+      favorite.showKey,
+      1,
+    );
+    expect(state?.results.map((result) => result.title)).toEqual([
+      "Newest search result",
+    ]);
+    expect(state?.downloadStates[newerTorrent.magnetLink]?.status).toBe(
+      "available",
+    );
+    expect(state?.downloadStates[olderTorrent.magnetLink]).toBeUndefined();
+    fixture.destroy();
+  });
 });
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 function show(): FavoriteShowSummary {
   return {

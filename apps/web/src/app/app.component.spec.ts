@@ -78,4 +78,39 @@ describe("AppComponent download navigation badge", () => {
     expect(fixture.nativeElement.querySelector(".nav-count-badge")).toBeNull();
     fixture.destroy();
   });
+
+  it("ignores a download-count response that arrives after logout", async () => {
+    let resolveDownloads!: (value: {
+      downloads: Array<{
+        id: number;
+        status: string;
+        rawStatus: number;
+        percentDone: number;
+      }>;
+      proxy: null;
+    }) => void;
+    api.getDownloads.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDownloads = resolve;
+        }),
+    );
+    const fixture = TestBed.createComponent(AppComponent);
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(api.getDownloads).toHaveBeenCalledTimes(1));
+
+    authenticated.next(false);
+    resolveDownloads({
+      downloads: [
+        { id: 1, status: "downloading", rawStatus: 4, percentDone: 0.5 },
+      ],
+      proxy: null,
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeDownloadCount()).toBe(0);
+    expect(fixture.nativeElement.querySelector(".nav-count-badge")).toBeNull();
+    fixture.destroy();
+  });
 });

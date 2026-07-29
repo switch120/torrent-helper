@@ -22,6 +22,7 @@ import {
 
 type EpisodeTorrentState = {
   status: "loading" | "ready" | "error";
+  requestId: number;
   results: TorrentResult[];
   warning: string | null;
   downloadStates: Record<string, EpisodeDownloadState>;
@@ -61,6 +62,7 @@ type FavoriteBrowserState = {
 })
 export class FavoritesComponent implements OnInit {
   private readonly api = inject(ReleaseApiClient);
+  private nextTorrentRequestId = 0;
   readonly favorites = signal<FavoriteShowSummary[]>([]);
   readonly status = signal<"loading" | "ready" | "error">("loading");
   readonly error = signal<string | null>(null);
@@ -269,11 +271,18 @@ export class FavoritesComponent implements OnInit {
     const browser = this.browserState(show.showKey);
     if (!browser) return;
     const key = this.torrentKey(browser, episodeNumber);
+    const requestId = ++this.nextTorrentRequestId;
     this.updateBrowser(show.showKey, (state) => ({
       ...state,
       torrentStates: {
         ...state.torrentStates,
-        [key]: { status: "loading", results: [], warning: null, downloadStates: {} },
+        [key]: {
+          status: "loading",
+          requestId,
+          results: [],
+          warning: null,
+          downloadStates: {},
+        },
       },
     }));
 
@@ -284,37 +293,53 @@ export class FavoritesComponent implements OnInit {
         episodeNumber,
         browser.quality,
       );
-      this.updateBrowser(show.showKey, (state) => ({
-        ...state,
-        torrentStates: {
-          ...state.torrentStates,
-          [key]: {
-            status: "ready",
-            results: response.results,
-            warning: response.warning,
-            downloadStates: Object.fromEntries(
-              response.results.map((torrent) => [
-                torrent.magnetLink,
-                { status: "checking", historyStatus: null, warning: null },
-              ]),
-            ),
+      this.updateBrowser(show.showKey, (state) => {
+        if (state.torrentStates[key]?.requestId !== requestId) return state;
+        return {
+          ...state,
+          torrentStates: {
+            ...state.torrentStates,
+            [key]: {
+              status: "ready",
+              requestId,
+              results: response.results,
+              warning: response.warning,
+              downloadStates: Object.fromEntries(
+                response.results.map((torrent) => [
+                  torrent.magnetLink,
+                  { status: "checking", historyStatus: null, warning: null },
+                ]),
+              ),
+            },
           },
-        },
-      }));
-      await this.loadEpisodeDownloadStates(show.showKey, key, response.results);
+        };
+      });
+      if (this.browserState(show.showKey)?.torrentStates[key]?.requestId !== requestId) {
+        return;
+      }
+      await this.loadEpisodeDownloadStates(
+        show.showKey,
+        key,
+        response.results,
+        requestId,
+      );
     } catch (error) {
-      this.updateBrowser(show.showKey, (state) => ({
-        ...state,
-        torrentStates: {
-          ...state.torrentStates,
-          [key]: {
-            status: "error",
-            results: [],
-            warning: error instanceof Error ? error.message : "Torrent search is unavailable.",
-            downloadStates: {},
+      this.updateBrowser(show.showKey, (state) => {
+        if (state.torrentStates[key]?.requestId !== requestId) return state;
+        return {
+          ...state,
+          torrentStates: {
+            ...state.torrentStates,
+            [key]: {
+              status: "error",
+              requestId,
+              results: [],
+              warning: error instanceof Error ? error.message : "Torrent search is unavailable.",
+              downloadStates: {},
+            },
           },
-        },
-      }));
+        };
+      });
     }
   }
 
@@ -454,6 +479,7 @@ export class FavoritesComponent implements OnInit {
     showKey: string,
     torrentStateKey: string,
     torrents: TorrentResult[],
+    requestId: number,
   ): Promise<void> {
     const entries = await Promise.all(
       torrents.map(async (torrent): Promise<[string, EpisodeDownloadState]> => {
@@ -488,7 +514,7 @@ export class FavoritesComponent implements OnInit {
 
     this.updateBrowser(showKey, (state) => {
       const torrentState = state.torrentStates[torrentStateKey];
-      if (!torrentState) return state;
+      if (!torrentState || torrentState.requestId !== requestId) return state;
       return {
         ...state,
         torrentStates: {

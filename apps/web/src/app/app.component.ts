@@ -28,7 +28,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private readonly api = inject(ReleaseApiClient);
   private authSubscription: Subscription | null = null;
   private downloadCountTimer: ReturnType<typeof setInterval> | null = null;
-  private loadingDownloadCount = false;
+  private loadingDownloadCountGeneration: number | null = null;
+  private downloadCountGeneration = 0;
 
   readonly modalActive = signal(false);
   readonly activeDownloadCount = signal(0);
@@ -36,18 +37,20 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.authSubscription = this.auth.isAuthenticated$.subscribe((authenticated) => {
+      const generation = ++this.downloadCountGeneration;
       this.stopDownloadCountRefresh();
       this.activeDownloadCount.set(0);
       if (!authenticated) return;
 
-      void this.loadActiveDownloadCount();
+      void this.loadActiveDownloadCount(generation);
       this.downloadCountTimer = setInterval(() => {
-        void this.loadActiveDownloadCount();
+        void this.loadActiveDownloadCount(generation);
       }, 5000);
     });
   }
 
   ngOnDestroy(): void {
+    this.downloadCountGeneration += 1;
     this.stopDownloadCountRefresh();
     this.authSubscription?.unsubscribe();
   }
@@ -82,11 +85,12 @@ export class AppComponent implements OnInit, OnDestroy {
     this.closeModal();
   }
 
-  private async loadActiveDownloadCount(): Promise<void> {
-    if (this.loadingDownloadCount) return;
-    this.loadingDownloadCount = true;
+  private async loadActiveDownloadCount(generation: number): Promise<void> {
+    if (this.loadingDownloadCountGeneration === generation) return;
+    this.loadingDownloadCountGeneration = generation;
     try {
       const response = await this.api.getDownloads();
+      if (this.downloadCountGeneration !== generation) return;
       this.activeDownloadCount.set(
         response.downloads.filter(
           (download) =>
@@ -99,7 +103,9 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       // Keep the most recent count when Transmission is temporarily unavailable.
     } finally {
-      this.loadingDownloadCount = false;
+      if (this.loadingDownloadCountGeneration === generation) {
+        this.loadingDownloadCountGeneration = null;
+      }
     }
   }
 
