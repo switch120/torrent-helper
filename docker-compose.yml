@@ -9,12 +9,12 @@ services:
     volumes:
       - release-db18:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${RELEASE_DB_USER:-release} -d ${RELEASE_DB_NAME:-release_hub}"]
+      test: ["CMD-SHELL", "getent hosts releaseDb >/dev/null && pg_isready -U ${RELEASE_DB_USER:-release} -d ${RELEASE_DB_NAME:-release_hub}"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:${RELEASE_DB_PORT:-5433}:5432"
+      - "127.0.0.1:${RELEASE_DB_PORT:-15433}:5432"
   releaseApi:
     image: node:22-alpine
     restart: unless-stopped
@@ -27,16 +27,19 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5.4-mini}"
       OPENAI_TORRENT_RERANK_ENABLED: "${OPENAI_TORRENT_RERANK_ENABLED:-true}"
-      AUTH0_DOMAIN: "${AUTH0_DOMAIN:-}"
-      AUTH0_AUDIENCE: "${AUTH0_AUDIENCE:-}"
-      AUTH0_CLIENT_ID: "${AUTH0_CLIENT_ID:-}"
+      LOCAL_AUTH_USERNAME: "${LOCAL_AUTH_USERNAME:-admin}"
+      LOCAL_AUTH_PASSWORD: "${LOCAL_AUTH_PASSWORD:-admin@123}"
+      LOCAL_AUTH_EMAIL: "${LOCAL_AUTH_EMAIL:-switch120@gmail.com}"
+      AUTH_ACCESS_TOKEN_SECRET: "${AUTH_ACCESS_TOKEN_SECRET:-local-dev-compose-secret}"
+      AUTH_ACCESS_TOKEN_TTL_SECONDS: "${AUTH_ACCESS_TOKEN_TTL_SECONDS:-900}"
+      AUTH_REFRESH_TOKEN_TTL_DAYS: "${AUTH_REFRESH_TOKEN_TTL_DAYS:-30}"
       PROWLARR_BASE_URL: "${PROWLARR_BASE_URL:-http://prowlarr:9696}"
       PROWLARR_API_KEY: "${PROWLARR_API_KEY:-}"
       TRANSMISSION_RPC_HOST: "${TRANSMISSION_RPC_HOST:-torrentHost}"
       TRANSMISSION_RPC_PORT: "${TRANSMISSION_RPC_PORT:-9091}"
       TRANSMISSION_RPC_USERNAME: "${TRANSMISSION_RPC_USERNAME:-}"
       TRANSMISSION_RPC_PASSWORD: "${TRANSMISSION_RPC_PASSWORD:-}"
-      RELEASE_WEB_ORIGIN: "${RELEASE_WEB_ORIGIN:-http://localhost:4200}"
+      RELEASE_WEB_ORIGIN: "${RELEASE_WEB_ORIGIN:-http://localhost:4202}"
       PORT: 3001
       NPM_CONFIG_CACHE: /tmp/.npm-cache
     depends_on:
@@ -44,9 +47,26 @@ services:
         condition: service_healthy
     volumes:
       - .:/usr/src/app
-    command: sh -c "npm install && npm run prisma:generate && npm run prisma:deploy && npm run start:dev"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        npm install
+        npm run prisma:generate
+        attempt=1
+        until npm run prisma:deploy; do
+          if [ "$$attempt" -ge 20 ]; then
+            echo "Prisma migrations did not complete after $$attempt attempts."
+            exit 1
+          fi
+          echo "Database unavailable for migrations; retrying in 3 seconds..."
+          attempt=$$((attempt + 1))
+          sleep 3
+        done
+        npm run start:dev
     ports:
-      - "127.0.0.1:${RELEASE_API_PORT:-3001}:3001"
+      - "127.0.0.1:${RELEASE_API_PORT:-3002}:3001"
   releaseWeb:
     image: node:22-alpine
     restart: unless-stopped
@@ -61,7 +81,7 @@ services:
       - .:/usr/src/app
     command: sh -c "npm install && npm run start"
     ports:
-      - "127.0.0.1:${RELEASE_WEB_PORT:-4200}:4200"
+      - "127.0.0.1:${RELEASE_WEB_PORT:-4202}:4200"
   prowlarr:
     image: lscr.io/linuxserver/prowlarr@sha256:a89f252d6a22bd25af14a5380aec0adcc3c3af2e3282164f981680e6844070f3
     restart: unless-stopped

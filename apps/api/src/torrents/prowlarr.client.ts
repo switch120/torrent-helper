@@ -90,6 +90,8 @@ export class ProwlarrClient {
       releaseTitle: release.title,
       mediaType: release.mediaType,
       releaseYear,
+      seasonNumber: release.seasonNumber,
+      episodeNumber: release.episodeNumber,
       includeReviewCandidates: this.reranker.isConfigured(),
     });
 
@@ -99,6 +101,7 @@ export class ProwlarrClient {
         mediaType: release.mediaType,
         releaseYear,
         seasonNumber: release.seasonNumber,
+        episodeNumber: release.episodeNumber,
         imdbId: release.imdbId,
         tmdbId: release.tmdbId,
       },
@@ -170,6 +173,8 @@ export function normalizeProwlarrResults(
     releaseTitle: string;
     mediaType?: "movie" | "tv";
     releaseYear?: number | null;
+    seasonNumber?: number | null;
+    episodeNumber?: number | null;
     includeReviewCandidates?: boolean;
   },
 ): TorrentResult[] {
@@ -222,6 +227,8 @@ function normalizeProwlarrResult(
     releaseTitle: string;
     mediaType?: "movie" | "tv";
     releaseYear?: number | null;
+    seasonNumber?: number | null;
+    episodeNumber?: number | null;
     includeReviewCandidates?: boolean;
   },
 ): TorrentResult | null {
@@ -259,7 +266,11 @@ function buildSearchQuery(release: NormalizedRelease, quality: TorrentSearchQual
     parts.push(String(year));
   }
   if (release.mediaType === "tv" && release.seasonNumber) {
-    parts.push(`S${String(release.seasonNumber).padStart(2, "0")}`);
+    const season = `S${String(release.seasonNumber).padStart(2, "0")}`;
+    const episode = release.episodeNumber
+      ? `E${String(release.episodeNumber).padStart(2, "0")}`
+      : "";
+    parts.push(`${season}${episode}`);
   }
   if (quality !== "any") parts.push(quality);
   return parts.join(" ");
@@ -365,6 +376,8 @@ function scoreReleaseMatch(
     releaseTitle: string;
     mediaType?: "movie" | "tv";
     releaseYear?: number | null;
+    seasonNumber?: number | null;
+    episodeNumber?: number | null;
   },
 ): { decision: "accept" | "review" | "reject"; score: number } {
   const releaseTokens = titleTokens(options.releaseTitle);
@@ -374,6 +387,15 @@ function scoreReleaseMatch(
   }
 
   if (options.mediaType === "movie" && looksEpisodic(torrentTitle)) {
+    return { decision: "reject", score: 0 };
+  }
+
+  if (
+    options.mediaType === "tv" &&
+    options.seasonNumber &&
+    options.episodeNumber &&
+    !matchesTvEpisode(torrentTitle, options.seasonNumber, options.episodeNumber)
+  ) {
     return { decision: "reject", score: 0 };
   }
 
@@ -398,6 +420,15 @@ function scoreReleaseMatch(
   }
 
   return { decision: "reject", score: 0 };
+}
+
+function matchesTvEpisode(title: string, seasonNumber: number, episodeNumber: number): boolean {
+  const season = String(seasonNumber).padStart(2, "0");
+  const episode = String(episodeNumber).padStart(2, "0");
+  const compact = new RegExp(`\\bs0?${seasonNumber}e0?${episodeNumber}\\b`, "i");
+  const alternate = new RegExp(`\\b0?${seasonNumber}x0?${episodeNumber}\\b`, "i");
+  const multiEpisode = new RegExp(`\\bs${season}e${episode}(?:e\\d{2,3}|-e?\\d{2,3})\\b`, "i");
+  return compact.test(title) || alternate.test(title) || multiEpisode.test(title);
 }
 
 function looksEpisodic(title: string): boolean {

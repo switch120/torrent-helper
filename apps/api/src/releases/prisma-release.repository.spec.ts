@@ -47,6 +47,68 @@ describe("PrismaReleaseRepository", () => {
     ]);
   });
 
+  it("filters cached theatrical fallback movie rows from digital week reads", async () => {
+    const prisma = {
+      tmdbDigitalMovie: {
+        findMany: vi.fn(async () => [
+          {
+            eventId: "tmdb:digital:1275779:2026-06-12",
+            tmdbId: 1275779,
+            title: "Disclosure Day",
+            titleType: "movie",
+            posterUrl: "https://image.tmdb.org/t/p/w342/disclosure.jpg",
+            releaseDate: new Date("2026-06-12T00:00:00.000Z"),
+            primaryReleaseDate: new Date("2026-06-02T00:00:00.000Z"),
+            popularity: 339.09,
+            voteCount: 380,
+            voteAverage: 6.9,
+            isFeaturedDigital: true,
+            originalLanguage: "en",
+            isInternational: false,
+            isDubbed: false,
+            raw: {
+              sourceTitleId: 1275779,
+              releaseSource: "tmdb",
+              sourceName: "New release",
+              isDigitalDateFallback: true,
+            },
+          },
+          {
+            eventId: "tmdb:digital:1110034:2026-06-12",
+            tmdbId: 1110034,
+            title: "Kraken",
+            titleType: "movie",
+            posterUrl: "https://image.tmdb.org/t/p/w342/kraken.jpg",
+            releaseDate: new Date("2026-06-12T00:00:00.000Z"),
+            primaryReleaseDate: new Date("2026-06-12T00:00:00.000Z"),
+            popularity: 38.82,
+            voteCount: 150,
+            voteAverage: 6.2,
+            isFeaturedDigital: true,
+            originalLanguage: "no",
+            isInternational: true,
+            isDubbed: false,
+            raw: {
+              sourceTitleId: 1110034,
+              releaseSource: "tmdb",
+              sourceName: "Digital release",
+              isDigitalDateFallback: false,
+            },
+          },
+        ]),
+      },
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.getTmdbDigitalMovies("2026-06-08", "2026-06-14")).resolves.toEqual([
+      expect.objectContaining({
+        eventId: "tmdb:digital:1110034:2026-06-12",
+        title: "Kraken",
+        sourceName: "Digital release",
+      }),
+    ]);
+  });
+
   it("accepts TMDB digital movie cache rows written by the current client policy", async () => {
     const prisma = {
       tmdbDigitalWeekCache: {
@@ -57,7 +119,7 @@ describe("PrismaReleaseRepository", () => {
           status: "fresh",
           warning: null,
           rawResponse: {
-            digitalDatePolicy: "original-us-digital-with-provider-backed-fallback-v2",
+            digitalDatePolicy: "original-us-digital-only-v3",
           },
         })),
       },

@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { DownloadRecordSnapshot, ReleaseRepository } from "./release.repository";
 import { ReleaseWorkflowService } from "./release-workflow.service";
@@ -113,6 +114,32 @@ describe("ReleaseWorkflowService torrent search", () => {
       }),
     );
     expect(response.warning).toContain("already added");
+  });
+
+  it("prevents a duplicate before sending it to Transmission when requested", async () => {
+    const magnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Episode";
+    const repository = createRepository({
+      findDownloadRecordByMagnet: vi.fn(async () =>
+        downloadRecord({ createdAt: new Date("2026-05-15T10:00:00.000Z") }),
+      ),
+    });
+    const transmission = {
+      addMagnet: vi.fn(),
+      getDownloads: vi.fn(async () => []),
+    };
+    const service = createService(repository, createProwlarr(), transmission);
+
+    await expect(
+      service.addDownloadForRelease(
+        7,
+        release({ eventId: "tmdb:100:s2:e3", title: "Example Show", mediaType: "tv" }),
+        { magnetLink, downloadDir: "/data/TV" },
+        { preventDuplicate: true },
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(transmission.addMagnet).not.toHaveBeenCalled();
+    expect(repository.saveDownloadRecord).not.toHaveBeenCalled();
   });
 
   it("lists download history with downloaded status derived from active Transmission progress", async () => {

@@ -1,12 +1,21 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { RELEASE_REPOSITORY, TMDB_CLIENT } from "../releases/release.tokens";
+import { PROWLARR_CLIENT, RELEASE_REPOSITORY, TMDB_CLIENT } from "../releases/release.tokens";
 import type { ReleaseRepository } from "../releases/release.repository";
+import { ReleaseWorkflowService } from "../releases/release-workflow.service";
 import type { NormalizedRelease } from "../releases/release.types";
 import type { TmdbClient } from "../releases/tmdb.client";
-import type { TmdbTvDetailResponse } from "../releases/tmdb-detail.mapper";
-import type { FavoriteEpisodeSummary, FavoriteReleaseContext, FavoriteShowSummary } from "./favorites.types";
+import type { TmdbSeasonDetailResponse, TmdbTvDetailResponse } from "../releases/tmdb-detail.mapper";
+import type { ProwlarrClient } from "../torrents/prowlarr.client";
+import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
+import type { AddDownloadResponse } from "../downloads/download.types";
+import type {
+  FavoriteEpisodeSummary,
+  FavoriteReleaseContext,
+  FavoriteSeasonDetail,
+  FavoriteShowSummary,
+} from "./favorites.types";
 
 type Clock = () => Date;
 
@@ -18,7 +27,9 @@ export class FavoritesService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RELEASE_REPOSITORY) private readonly repository: Pick<ReleaseRepository, "getReleaseByEventId">,
-    @Inject(TMDB_CLIENT) private readonly tmdb: Pick<TmdbClient, "isConfigured" | "getTvDetail">,
+    @Inject(TMDB_CLIENT) private readonly tmdb: Pick<TmdbClient, "isConfigured" | "getTvDetail" | "getTvSeasonDetail">,
+    @Inject(PROWLARR_CLIENT) private readonly prowlarr: Pick<ProwlarrClient, "searchRelease">,
+    @Inject(ReleaseWorkflowService) private readonly workflow: Pick<ReleaseWorkflowService, "addDownloadForRelease">,
     private readonly clock: Clock = () => new Date(),
   ) {}
 
@@ -60,6 +71,87 @@ export class FavoritesService {
       where: { userId, showKey },
     });
     return { deleted: true };
+  }
+
+  async getSeason(
+    userId: number,
+    showKey: string,
+    seasonNumber: number,
+  ): Promise<FavoriteSeasonDetail> {
+    const favorite = await this.requireFavorite(userId, showKey);
+    validateEpisodeNumber(seasonNumber, "Season");
+    if (!favorite.tmdbId || !this.tmdb.isConfigured()) {
+      throw new BadRequestException("Episode browsing requires a TMDB-backed favorite.");
+    }
+    if (favorite.numberOfSeasons && seasonNumber > favorite.numberOfSeasons) {
+      throw new NotFoundException("Season was not found.");
+    }
+
+    const season = await this.tmdb.getTvSeasonDetail(favorite.tmdbId, seasonNumber);
+    return mapFavoriteSeason(showKey, seasonNumber, season);
+  }
+
+  async searchEpisodeTorrents(
+    userId: number,
+    showKey: string,
+    seasonNumber: number,
+    episodeNumber: number,
+    quality: string,
+  ): Promise<{ results: TorrentResult[]; warning: string | null }> {
+    const favorite = await this.requireFavorite(userId, showKey);
+    validateEpisodeNumber(seasonNumber, "Season");
+    validateEpisodeNumber(episodeNumber, "Episode");
+    const normalizedQuality = normalizeEpisodeQuality(quality);
+    const release = favoriteEpisodeRelease(favorite, seasonNumber, episodeNumber);
+    const response = await this.prowlarr.searchRelease(release, normalizedQuality);
+    return {
+      results: selectTopEpisodeTorrents(response.results),
+      warning: response.warning,
+    };
+  }
+
+  async addEpisodeDownload(
+    userId: number,
+    showKey: string,
+    seasonNumber: number,
+    episodeNumber: number,
+    input: { magnetLink?: string; downloadDir?: string },
+  ): Promise<AddDownloadResponse> {
+    const favorite = await this.requireFavorite(userId, showKey);
+    validateEpisodeNumber(seasonNumber, "Season");
+    validateEpisodeNumber(episodeNumber, "Episode");
+    const response = await this.workflow.addDownloadForRelease(
+      userId,
+      favoriteEpisodeRelease(favorite, seasonNumber, episodeNumber),
+      {
+        magnetLink: input.magnetLink,
+        downloadDir: input.downloadDir || "/data/TV",
+      },
+      { preventDuplicate: true },
+    );
+    try {
+      await this.prisma.favoriteShow.update({
+        where: { userId_showKey: { userId, showKey } },
+        data: { preferredDownloadDir: response.historyRecord.downloadDir },
+      });
+    } catch {
+      return {
+        ...response,
+        warning: [
+          response.warning,
+          "Download started, but the preferred TV folder could not be saved.",
+        ].filter(Boolean).join(" "),
+      };
+    }
+    return response;
+  }
+
+  private async requireFavorite(userId: number, showKey: string) {
+    const favorite = await this.prisma.favoriteShow.findUnique({
+      where: { userId_showKey: { userId, showKey } },
+    });
+    if (!favorite) throw new NotFoundException("Favorite show was not found.");
+    return favorite;
   }
 
   private async buildSnapshot(release: NormalizedRelease): Promise<FavoriteSnapshot> {
@@ -123,7 +215,97 @@ export class FavoritesService {
   }
 }
 
-type FavoriteSnapshot = Omit<FavoriteShowSummary, "fetchedAt"> & {
+function mapFavoriteSeason(
+  showKey: string,
+  requestedSeasonNumber: number,
+  season: TmdbSeasonDetailResponse,
+): FavoriteSeasonDetail {
+  const seasonNumber = season.season_number ?? requestedSeasonNumber;
+  return {
+    showKey,
+    seasonNumber,
+    airDate: season.air_date || null,
+    overview: season.overview || null,
+    posterUrl: imageUrl(season.poster_path, posterBaseUrl),
+    episodes: (season.episodes || [])
+      .map((episode) => ({
+        name: episode.name || null,
+        seasonNumber: episode.season_number ?? seasonNumber,
+        episodeNumber: episode.episode_number ?? null,
+        airDate: episode.air_date || null,
+        overview: episode.overview || null,
+      }))
+      .filter((episode) => episode.episodeNumber !== null)
+      .sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0)),
+  };
+}
+
+function favoriteEpisodeRelease(
+  favorite: {
+    showKey: string;
+    tmdbId: number | null;
+    sourceTitleId: number | null;
+    title: string;
+    posterUrl: string | null;
+  },
+  seasonNumber: number,
+  episodeNumber: number,
+): NormalizedRelease {
+  return {
+    eventId: `${favorite.showKey}:s${seasonNumber}:e${episodeNumber}`,
+    sourceTitleId: favorite.sourceTitleId ?? favorite.tmdbId ?? 0,
+    releaseSource: "tmdb",
+    releaseKind: "streaming",
+    title: favorite.title,
+    titleType: "tvSeries",
+    mediaType: "tv",
+    tmdbId: favorite.tmdbId,
+    tmdbType: "tv",
+    imdbId: null,
+    posterUrl: favorite.posterUrl,
+    releaseDate: "",
+    sourceId: 0,
+    sourceName: "Favorite episode",
+    sourceType: "unknown",
+    seasonNumber,
+    episodeNumber,
+    isOriginal: false,
+  };
+}
+
+function normalizeEpisodeQuality(value: string): TorrentSearchQuality {
+  return value === "1080p" || value === "any" ? value : "2160p";
+}
+
+function validateEpisodeNumber(value: number, label: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new BadRequestException(`${label} number must be a positive integer.`);
+  }
+}
+
+export function selectTopEpisodeTorrents(results: TorrentResult[]): TorrentResult[] {
+  return [...results]
+    .sort((a, b) =>
+      torrentHealthScore(b) - torrentHealthScore(a) ||
+      b.seeders - a.seeders ||
+      torrentQualityRank(b.quality) - torrentQualityRank(a.quality) ||
+      b.confidence - a.confidence ||
+      a.title.localeCompare(b.title),
+    )
+    .slice(0, 5);
+}
+
+function torrentHealthScore(torrent: Pick<TorrentResult, "seeders" | "leechers">): number {
+  const peers = torrent.seeders + torrent.leechers;
+  const availability = peers > 0 ? torrent.seeders / peers : 0;
+  return torrent.seeders * 2 + availability * 25;
+}
+
+function torrentQualityRank(quality: TorrentResult["quality"]): number {
+  return { "2160p": 4, "1080p": 3, "720p": 2, "480p": 1, unknown: 0 }[quality];
+}
+
+type FavoriteSnapshot = Omit<FavoriteShowSummary, "fetchedAt" | "preferredDownloadDir"> & {
   raw: unknown;
   fetchedAt: Date;
 };
@@ -173,6 +355,7 @@ function mapFavoriteShow(record: {
   lastEpisode: unknown;
   nextEpisode: unknown;
   releaseContext: unknown;
+  preferredDownloadDir?: string | null;
   fetchedAt: Date | null;
 }): FavoriteShowSummary {
   return {
@@ -192,6 +375,7 @@ function mapFavoriteShow(record: {
     lastEpisode: mapStoredEpisode(record.lastEpisode),
     nextEpisode: mapStoredEpisode(record.nextEpisode),
     releaseContext: mapReleaseContext(record.releaseContext),
+    preferredDownloadDir: record.preferredDownloadDir || null,
     fetchedAt: record.fetchedAt?.toISOString() ?? null,
   };
 }

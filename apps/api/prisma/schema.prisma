@@ -9,34 +9,34 @@ datasource db {
 }
 
 model TmdbDigitalWeekCache {
-  weekStart   DateTime @id @db.Date
-  weekEnd     DateTime @db.Date
+  weekStart   DateTime  @id @db.Date
+  weekEnd     DateTime  @db.Date
   status      String
   warning     String?
   fetchedAt   DateTime?
   expiresAt   DateTime?
   rawResponse Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model TmdbDigitalMovie {
-  eventId              String   @id
-  tmdbId               Int
-  title                String
-  posterUrl            String?
-  releaseDate          DateTime @db.Date
-  primaryReleaseDate   DateTime? @db.Date
-  popularity           Float?
-  voteAverage          Float?
-  voteCount            Int?
-  isFeaturedDigital    Boolean  @default(false)
-  originalLanguage     String?
-  isInternational      Boolean  @default(false)
-  isDubbed             Boolean  @default(false)
-  raw                  Json
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  eventId            String    @id
+  tmdbId             Int
+  title              String
+  posterUrl          String?
+  releaseDate        DateTime  @db.Date
+  primaryReleaseDate DateTime? @db.Date
+  popularity         Float?
+  voteAverage        Float?
+  voteCount          Int?
+  isFeaturedDigital  Boolean   @default(false)
+  originalLanguage   String?
+  isInternational    Boolean   @default(false)
+  isDubbed           Boolean   @default(false)
+  raw                Json
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@index([releaseDate])
   @@index([tmdbId])
@@ -45,24 +45,24 @@ model TmdbDigitalMovie {
 }
 
 model TmdbTvWeekCache {
-  weekStart   DateTime @id @db.Date
-  weekEnd     DateTime @db.Date
+  weekStart   DateTime  @id @db.Date
+  weekEnd     DateTime  @db.Date
   status      String
   warning     String?
   fetchedAt   DateTime?
   expiresAt   DateTime?
   rawResponse Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model TmdbTvAiring {
-  eventId          String   @id
+  eventId          String    @id
   tmdbId           Int
   title            String
   titleType        String
   posterUrl        String?
-  releaseDate      DateTime @db.Date
+  releaseDate      DateTime  @db.Date
   firstAirDate     DateTime? @db.Date
   providerId       Int
   providerName     String
@@ -74,11 +74,11 @@ model TmdbTvAiring {
   voteAverage      Float?
   voteCount        Int?
   originalLanguage String?
-  isInternational  Boolean  @default(false)
-  isDubbed         Boolean  @default(false)
+  isInternational  Boolean   @default(false)
+  isDubbed         Boolean   @default(false)
   raw              Json
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([releaseDate])
   @@index([tmdbId])
@@ -115,7 +115,7 @@ model TorrentSearchCache {
 }
 
 model DownloadRecord {
-  id                    Int      @id @default(autoincrement())
+  id                    Int       @id @default(autoincrement())
   userId                Int?
   releaseEventId        String
   tmdbId                Int?
@@ -125,11 +125,11 @@ model DownloadRecord {
   magnetLink            String
   magnetHash            String?
   downloadDir           String
-  status                String   @default("pending")
+  status                String    @default("pending")
   completedAt           DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  user                  AppUser? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  AppUser?  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([releaseEventId])
@@ -139,16 +139,34 @@ model DownloadRecord {
 }
 
 model AppUser {
-  id        Int            @id @default(autoincrement())
-  auth0Sub  String         @unique
-  email     String         @unique
-  name      String?
-  pictureUrl String?
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-  settings  UserSettings?
-  favorites FavoriteShow[]
-  downloads DownloadRecord[]
+  id            Int              @id @default(autoincrement())
+  username      String           @unique
+  passwordHash  String?
+  email         String           @unique
+  name          String?
+  pictureUrl    String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  settings      UserSettings?
+  favorites     FavoriteShow[]
+  downloads     DownloadRecord[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id                Int       @id @default(autoincrement())
+  userId            Int
+  tokenHash         String    @unique
+  expiresAt         DateTime
+  rotatedAt         DateTime?
+  revokedAt         DateTime?
+  replacedByTokenId Int?
+  lastUsedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  user              AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model UserSettings {
@@ -165,29 +183,30 @@ model UserSettings {
 }
 
 model FavoriteShow {
-  id                  Int      @id @default(autoincrement())
-  userId              Int
-  showKey             String
-  tmdbId              Int?
-  sourceTitleId       Int?
-  title               String
-  posterUrl           String?
-  backdropUrl         String?
-  overview            String?
-  status              String?
-  isCanceled          Boolean  @default(false)
-  currentSeasonNumber Int?
-  numberOfSeasons     Int?
-  numberOfEpisodes    Int?
-  lastAirDate         DateTime? @db.Date
-  lastEpisode         Json?
-  nextEpisode         Json?
-  releaseContext      Json?
-  raw                 Json?
-  fetchedAt           DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  user                AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                   Int       @id @default(autoincrement())
+  userId               Int
+  showKey              String
+  tmdbId               Int?
+  sourceTitleId        Int?
+  title                String
+  posterUrl            String?
+  backdropUrl          String?
+  overview             String?
+  status               String?
+  isCanceled           Boolean   @default(false)
+  currentSeasonNumber  Int?
+  numberOfSeasons      Int?
+  numberOfEpisodes     Int?
+  lastAirDate          DateTime? @db.Date
+  lastEpisode          Json?
+  nextEpisode          Json?
+  releaseContext       Json?
+  preferredDownloadDir String?
+  raw                  Json?
+  fetchedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  user                 AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, showKey])
   @@index([userId])

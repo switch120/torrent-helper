@@ -128,8 +128,280 @@
               }
             </div>
           </div>
+
+          <div class="episode-browser-entry">
+            <button
+              type="button"
+              class="episode-browser-toggle"
+              [disabled]="!canBrowseEpisodes(show)"
+              [attr.aria-expanded]="expandedShowKey() === show.showKey"
+              [attr.aria-controls]="'episodes-' + show.showKey"
+              (click)="toggleBrowser(show)"
+            >
+              <span>
+                <strong>Episode browser</strong>
+                <small>
+                  {{ canBrowseEpisodes(show) ? "Browse seasons and inspect ranked torrent matches" : "TMDB episode data unavailable" }}
+                </small>
+              </span>
+              <span class="episode-browser-chevron" aria-hidden="true">
+                {{ expandedShowKey() === show.showKey ? "−" : "+" }}
+              </span>
+            </button>
+          </div>
+
+          @if (expandedShowKey() === show.showKey && browserState(show.showKey); as browser) {
+            <section
+              class="episode-browser-panel"
+              [id]="'episodes-' + show.showKey"
+              [attr.aria-label]="show.title + ' episodes'"
+            >
+              <div class="episode-browser-heading">
+                <div>
+                  <p class="eyebrow">Episode index</p>
+                  <h3>Season {{ browser.seasonNumber }}</h3>
+                  <p>Expand an episode to fetch its five strongest Prowlarr matches.</p>
+                </div>
+                <div class="episode-browser-controls">
+                  <label>
+                    <span>Season</span>
+                    <select
+                      [ngModel]="browser.seasonNumber"
+                      (ngModelChange)="setSeason(show, $event)"
+                      [attr.aria-label]="'Season for ' + show.title"
+                    >
+                      @for (seasonNumber of seasonOptions(show); track seasonNumber) {
+                        <option [ngValue]="seasonNumber">
+                          Season {{ seasonNumber }}{{ seasonNumber === show.currentSeasonNumber ? " · Current" : "" }}
+                        </option>
+                      }
+                    </select>
+                  </label>
+                  <label>
+                    <span>Quality</span>
+                    <select
+                      [ngModel]="browser.quality"
+                      (ngModelChange)="setQuality(show, $event)"
+                      [attr.aria-label]="'Torrent quality for ' + show.title"
+                    >
+                      <option value="2160p">2160p</option>
+                      <option value="1080p">1080p</option>
+                      <option value="any">Any quality</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              @if (browser.seasonStatus === "loading") {
+                <p class="episode-browser-status" role="status">Loading season episodes...</p>
+              } @else if (browser.seasonStatus === "error") {
+                <p class="episode-browser-status is-error">{{ browser.error }}</p>
+              } @else if (!browser.season?.episodes?.length) {
+                <p class="episode-browser-status">No episodes are available for this season.</p>
+              } @else {
+                <div class="episode-list">
+                  @for (episode of browser.season?.episodes; track episode.episodeNumber) {
+                    <article class="episode-row-shell">
+                      <button
+                        type="button"
+                        class="episode-row-summary"
+                        [attr.aria-expanded]="browser.expandedEpisodeNumber === episode.episodeNumber"
+                        (click)="toggleEpisode(show, episode)"
+                      >
+                        <span class="episode-index">
+                          E{{ (episode.episodeNumber || 0).toString().padStart(2, "0") }}
+                        </span>
+                        <span class="episode-row-copy">
+                          <strong>{{ episode.name || "Episode " + episode.episodeNumber }}</strong>
+                          @if (episodeDownloadStatus(show.showKey, episode.episodeNumber); as downloadStatus) {
+                            <span
+                              class="episode-row-download-status"
+                              [class.is-downloading]="downloadStatus === 'Adding' || downloadStatus === 'Downloading'"
+                            >
+                              {{ downloadStatus }}
+                            </span>
+                          }
+                          @if (episode.overview) {
+                            <small>{{ episode.overview }}</small>
+                          }
+                        </span>
+                        <time [dateTime]="episode.airDate || ''">
+                          {{ episode.airDate ? (episode.airDate | date: "MMM d, y") : "Air date TBD" }}
+                        </time>
+                        <span class="episode-row-action" aria-hidden="true">
+                          {{ browser.expandedEpisodeNumber === episode.episodeNumber ? "Close" : "Torrents" }}
+                        </span>
+                      </button>
+
+                      @if (browser.expandedEpisodeNumber === episode.episodeNumber && episode.episodeNumber) {
+                        <div class="episode-torrent-panel">
+                          <div class="episode-torrent-heading">
+                            <div>
+                              <strong>Top torrent matches</strong>
+                              <small>Ranked by swarm health, seeders, quality, and match confidence.</small>
+                            </div>
+                            <button
+                              type="button"
+                              class="borderless-button"
+                              (click)="searchEpisodeTorrents(show, episode.episodeNumber)"
+                            >
+                              Refresh
+                            </button>
+                          </div>
+
+                          @if (episodeTorrentState(show.showKey, episode.episodeNumber); as torrentState) {
+                            @if (torrentState.status === "loading") {
+                              <p class="episode-browser-status" role="status">
+                                Searching configured Prowlarr indexers...
+                              </p>
+                            } @else {
+                              @if (torrentState.warning) {
+                                <p class="episode-browser-status is-warning">{{ torrentState.warning }}</p>
+                              }
+                              @if (torrentState.results.length === 0) {
+                                <p class="episode-browser-status">No matching magnet links found.</p>
+                              } @else {
+                                <div class="episode-torrent-table">
+                                  <div class="episode-torrent-row episode-torrent-head">
+                                    <span>Title</span>
+                                    <span>Quality</span>
+                                    <span>Size</span>
+                                    <span>S/L</span>
+                                    <span>Match</span>
+                                    <span>Action</span>
+                                  </div>
+                                  @for (torrent of torrentState.results; track torrent.id) {
+                                    <div
+                                      class="episode-torrent-row"
+                                      [class.is-download-known]="
+                                        episodeDownloadState(show.showKey, episode.episodeNumber, torrent)?.status === 'added' ||
+                                        episodeDownloadState(show.showKey, episode.episodeNumber, torrent)?.status === 'adding'
+                                      "
+                                    >
+                                      <div>
+                                        <strong>{{ torrent.title }}</strong>
+                                        <small>{{ torrent.indexer }} · {{ formatTorrentAge(torrent.publishedAt) }}</small>
+                                      </div>
+                                      <span class="quality-pill" [ngClass]="qualityTone(torrent.quality)">
+                                        {{ torrent.quality }}
+                                      </span>
+                                      <span>{{ formatBytes(torrent.sizeBytes) }}</span>
+                                      <span>{{ torrent.seeders }}/{{ torrent.leechers }}</span>
+                                      <span class="confidence-pill" [ngClass]="confidenceTone(torrent.confidence)">
+                                        {{ confidenceLabel(torrent.confidence) }}
+                                      </span>
+                                      @if (episodeDownloadState(show.showKey, episode.episodeNumber, torrent); as downloadState) {
+                                        <button
+                                          type="button"
+                                          class="episode-download-button"
+                                          [disabled]="!canAddEpisodeTorrent(downloadState)"
+                                          [attr.title]="downloadState.warning"
+                                          (click)="openEpisodeAddDialog(show, episode, torrent)"
+                                        >
+                                          {{ episodeDownloadButtonLabel(downloadState) }}
+                                        </button>
+                                      } @else {
+                                        <button type="button" class="episode-download-button" disabled>
+                                          Checking...
+                                        </button>
+                                      }
+                                    </div>
+                                  }
+                                </div>
+                              }
+                            }
+                          }
+                        </div>
+                      }
+                    </article>
+                  }
+                </div>
+              }
+            </section>
+          }
         </article>
       }
     </section>
   }
 </main>
+
+@if (selectedEpisodeTorrent(); as selected) {
+  <div class="modal-backdrop" role="presentation" (click)="closeEpisodeAddDialog()">
+    <section
+      class="add-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Download TV episode"
+      (click)="$event.stopPropagation()"
+      (keydown.escape)="$event.stopPropagation(); closeEpisodeAddDialog()"
+    >
+      <div class="add-dialog-header">
+        <div>
+          <p class="eyebrow">Transmission</p>
+          <h2>Download episode</h2>
+        </div>
+        <button
+          type="button"
+          class="borderless-button add-dialog-close"
+          [disabled]="episodeAddStatus() === 'adding'"
+          (click)="closeEpisodeAddDialog()"
+          aria-label="Close download episode dialog"
+        >
+          &times;
+        </button>
+      </div>
+
+      <div class="episode-download-context">
+        <strong>{{ selected.showTitle }}</strong>
+        <span>
+          S{{ selected.seasonNumber.toString().padStart(2, "0") }}E{{ selected.episodeNumber.toString().padStart(2, "0") }}
+          @if (selected.episodeName) {
+            · {{ selected.episodeName }}
+          }
+        </span>
+      </div>
+      <p class="add-dialog-title">{{ selected.torrent.title }}</p>
+      <div class="source-line">
+        <small>{{ selected.torrent.quality }}</small>
+        <small>{{ formatBytes(selected.torrent.sizeBytes) }}</small>
+        <small>{{ selected.torrent.seeders }}/{{ selected.torrent.leechers }} S/L</small>
+        <small>{{ formatTorrentAge(selected.torrent.publishedAt) }}</small>
+      </div>
+
+      <label>
+        Save to
+        <input
+          type="text"
+          [ngModel]="episodeDownloadDir()"
+          (ngModelChange)="episodeDownloadDir.set($event)"
+          placeholder="/data/TV"
+          autocomplete="off"
+          aria-label="TV episode download directory"
+        >
+      </label>
+
+      @if (episodeAddError()) {
+        <p class="duplicate-warning">{{ episodeAddError() }}</p>
+      }
+
+      <div class="dialog-actions">
+        <button
+          type="button"
+          class="source-chip"
+          [disabled]="episodeAddStatus() === 'adding'"
+          (click)="closeEpisodeAddDialog()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="refresh-button"
+          [disabled]="episodeAddStatus() === 'adding' || !episodeDownloadDir().trim()"
+          (click)="addSelectedEpisodeTorrent()"
+        >
+          {{ episodeAddStatus() === "adding" ? "Adding..." : "Add to Transmission" }}
+        </button>
+      </div>
+    </section>
+  </div>
+}

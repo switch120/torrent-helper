@@ -13,7 +13,7 @@ import type { NormalizedRelease } from "./release.types";
 import type { ReleaseDetail } from "./release-detail.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
-const tmdbDigitalDatePolicy = "original-us-digital-with-provider-backed-fallback-v2";
+const tmdbDigitalDatePolicy = "original-us-digital-only-v3";
 
 @Injectable()
 export class PrismaReleaseRepository implements ReleaseRepository {
@@ -64,9 +64,11 @@ export class PrismaReleaseRepository implements ReleaseRepository {
       orderBy: [{ releaseDate: "asc" }, { title: "asc" }],
     });
 
-    return movies.map((movie) => {
+    return movies.flatMap((movie) => {
       const raw = isRecord(movie.raw) ? movie.raw : {};
-      return {
+      if (raw.isDigitalDateFallback === true) return [];
+
+      return [{
         eventId: movie.eventId,
         sourceTitleId: normalizeNumber(raw.sourceTitleId) ?? movie.tmdbId,
         releaseSource: normalizeReleaseSource(raw.releaseSource),
@@ -80,7 +82,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         posterUrl: movie.posterUrl,
         releaseDate: toDateOnly(movie.releaseDate),
         sourceId: normalizeNumber(raw.sourceId) ?? 0,
-        sourceName: normalizeString(raw.sourceName) || (raw.isDigitalDateFallback === true ? "New release" : "Digital release"),
+        sourceName: normalizeString(raw.sourceName) || "Digital release",
         sourceType: "digital",
         seasonNumber: null,
         isOriginal: Boolean(raw.isOriginal),
@@ -89,12 +91,12 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         voteCount: movie.voteCount,
         voteAverage: movie.voteAverage,
         isFeaturedDigital: movie.isFeaturedDigital,
-        isDigitalDateFallback: raw.isDigitalDateFallback === true,
+        isDigitalDateFallback: false,
         originalLanguage: movie.originalLanguage,
         isInternational: movie.isInternational,
         isDubbed: movie.isDubbed,
         sources: normalizeReleaseSources(raw.sources),
-      };
+      }];
     });
   }
 

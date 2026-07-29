@@ -133,8 +133,8 @@ describe("TmdbClient", () => {
     expect(calls[0]).toContain("with_release_type=4");
     expect(calls[0]).toContain("release_date.gte=2026-05-11");
     expect(calls[0]).toContain("release_date.lte=2026-05-17");
-    expect(calls.some((url) => url.includes("with_release_type=2"))).toBe(true);
-    expect(calls.some((url) => url.includes("with_release_type=3"))).toBe(true);
+    expect(calls.some((url) => url.includes("with_release_type=2"))).toBe(false);
+    expect(calls.some((url) => url.includes("with_release_type=3"))).toBe(false);
     expect(calls.some((url) => url.includes("/3/movie/100/release_dates"))).toBe(true);
     expect(result.releases).toEqual([
       expect.objectContaining({
@@ -157,7 +157,7 @@ describe("TmdbClient", () => {
     ]);
     expect(result.raw).toEqual(
       expect.objectContaining({
-        digitalDatePolicy: "original-us-digital-with-provider-backed-fallback-v2",
+        digitalDatePolicy: "original-us-digital-only-v3",
       }),
     );
   });
@@ -284,7 +284,7 @@ describe("TmdbClient", () => {
     expect(result.releases).toEqual([]);
   });
 
-  it("includes same-week new movie releases when TMDB has no explicit digital date", async () => {
+  it("excludes same-week theatrical releases even when TMDB has store availability but no explicit digital date", async () => {
     const client = new TmdbClient({
       apiKey: "tmdb-key",
       fetchImpl: async (url) => {
@@ -354,16 +354,7 @@ describe("TmdbClient", () => {
       weekEnd: "2026-05-17",
     });
 
-    expect(result.releases).toEqual([
-      expect.objectContaining({
-        eventId: "tmdb:digital:1398050:2026-05-15",
-        title: "Driver's Ed",
-        releaseDate: "2026-05-15",
-        sourceName: "New release",
-        isFeaturedDigital: true,
-        isDigitalDateFallback: true,
-      }),
-    ]);
+    expect(result.releases).toEqual([]);
   });
 
   it("excludes same-week theatrical movies when TMDB has no digital availability", async () => {

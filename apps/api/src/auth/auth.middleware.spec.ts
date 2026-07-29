@@ -1,49 +1,63 @@
+import { UnauthorizedException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { AuthMiddleware } from "./auth.middleware";
 import type { AuthenticatedRequest } from "./auth.types";
 
 describe("AuthMiddleware", () => {
-  it("uses the stored allowlisted Google user when refreshed access tokens omit email claims", async () => {
-    const findUnique = vi.fn().mockResolvedValue({
+  it("attaches the first-party user for a valid bearer access token", async () => {
+    const user = {
       id: 1,
-      auth0Sub: "google-oauth2|105402711274954610557",
+      username: "admin",
       email: "switch120@gmail.com",
-      name: "Scott",
-      pictureUrl: "https://example.com/scott.png",
-    });
-    const upsert = vi.fn();
-    const fetchImpl = vi.fn().mockRejectedValue(new Error("userinfo should not be called"));
-    vi.stubGlobal("fetch", fetchImpl);
-
-    const middleware = new AuthMiddleware({ appUser: { findUnique, upsert } } as never);
+      name: "Scott Byers",
+      pictureUrl: null,
+    };
+    const verifyAccessToken = vi.fn().mockResolvedValue(user);
+    const middleware = new AuthMiddleware({ verifyAccessToken } as never);
     const request = {
-      auth: {
-        payload: {
-          sub: "google-oauth2|105402711274954610557",
-        },
-        token: "refreshed-access-token",
-      },
+      path: "/api/favorites",
+      headers: { authorization: "Bearer access-token" },
     } as AuthenticatedRequest;
 
-    await (
-      middleware as unknown as {
-        attachUser(request: AuthenticatedRequest): Promise<void>;
-      }
-    ).attachUser(request);
-
-    expect(findUnique).toHaveBeenCalledWith({
-      where: { auth0Sub: "google-oauth2|105402711274954610557" },
-    });
-    expect(fetchImpl).not.toHaveBeenCalled();
-    expect(upsert).not.toHaveBeenCalled();
-    expect(request.releaseHubUser).toEqual({
-      id: 1,
-      auth0Sub: "google-oauth2|105402711274954610557",
-      email: "switch120@gmail.com",
-      name: "Scott",
-      pictureUrl: "https://example.com/scott.png",
+    await new Promise<void>((resolve, reject) => {
+      middleware.use(request, {} as never, (error?: unknown) => {
+        if (error) reject(error);
+        else resolve();
+      });
     });
 
-    vi.unstubAllGlobals();
+    expect(verifyAccessToken).toHaveBeenCalledWith("access-token");
+    expect(request.releaseHubUser).toEqual(user);
+  });
+
+  it("rejects protected routes without a bearer token", async () => {
+    const middleware = new AuthMiddleware({ verifyAccessToken: vi.fn() } as never);
+    const request = {
+      path: "/api/favorites",
+      headers: {},
+    } as AuthenticatedRequest;
+
+    const error = await new Promise<unknown>((resolve) => {
+      middleware.use(request, {} as never, (nextError?: unknown) => resolve(nextError));
+    });
+
+    expect(error).toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("leaves health and token endpoints public", async () => {
+    const verifyAccessToken = vi.fn();
+    const middleware = new AuthMiddleware({ verifyAccessToken } as never);
+
+    for (const path of ["/api/health", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout"]) {
+      await new Promise<void>((resolve, reject) => {
+        middleware.use(
+          { path, headers: {} } as AuthenticatedRequest,
+          {} as never,
+          (error?: unknown) => (error ? reject(error) : resolve()),
+        );
+      });
+    }
+
+    expect(verifyAccessToken).not.toHaveBeenCalled();
   });
 });

@@ -31,5 +31,15 @@ export type FavoriteShowSummary = {
   lastEpisode: FavoriteEpisodeSummary | null;
   nextEpisode: FavoriteEpisodeSummary | null;
   releaseContext: FavoriteReleaseContext | null;
+  preferredDownloadDir: string | null;
   fetchedAt: string | null;
+};
+
+export type FavoriteSeasonDetail = {
+  showKey: string;
+  seasonNumber: number;
+  airDate: string | null;
+  overview: string | null;
+  posterUrl: string | null;
+  episodes: FavoriteEpisodeSummary[];
 };

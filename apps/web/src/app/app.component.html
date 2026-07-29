@@ -19,17 +19,28 @@
         <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/>
       </svg>
       Downloads
+      @if (activeDownloadCount() > 0) {
+        <span
+          class="nav-count-badge"
+          [attr.aria-label]="
+            activeDownloadCount() +
+            (activeDownloadCount() === 1 ? ' active download' : ' active downloads')
+          "
+        >
+          {{ activeDownloadCount() > 99 ? "99+" : activeDownloadCount() }}
+        </span>
+      }
     </a>
   </div>
 
   <div class="auth-actions">
     @if (auth.user$ | async; as user) {
-      <span>{{ user.email }}</span>
+      <span>{{ user.username }}</span>
     }
     @if (auth.isAuthenticated$ | async) {
       <button type="button" class="borderless-button" (click)="logout()">Logout</button>
     } @else {
-      <button type="button" class="refresh-button" (click)="login()">Login with Google</button>
+      <button type="button" class="refresh-button" (click)="login()">Login</button>
     }
   </div>
 </nav>

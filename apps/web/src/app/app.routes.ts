@@ -1,9 +1,9 @@
 import type { Routes } from "@angular/router";
-import { AccessDeniedComponent } from "./access-denied.component";
 import { DownloadHistoryComponent } from "./download-history.component";
 import { DownloadsComponent } from "./downloads.component";
 import { FavoritesComponent } from "./favorites.component";
 import { HiddenShowsComponent } from "./hidden-shows.component";
+import { LoginComponent } from "./login.component";
 import { ProviderSettingsComponent } from "./provider-settings.component";
 import { releaseHubAuthGuard } from "./release-hub-auth.guard";
 import { ReleaseDetailComponent } from "./release-detail.component";
@@ -11,6 +11,7 @@ import { WeekSettingsComponent } from "./week-settings.component";
 import { WeekBrowserComponent } from "./week-browser.component";
 
 export const routes: Routes = [
+  { path: "login", component: LoginComponent },
   { path: "", component: WeekBrowserComponent, canActivate: [releaseHubAuthGuard] },
   { path: "release/:eventId", component: ReleaseDetailComponent, canActivate: [releaseHubAuthGuard] },
   { path: "downloads", component: DownloadsComponent, canActivate: [releaseHubAuthGuard] },
@@ -22,6 +23,5 @@ export const routes: Routes = [
   { path: "settings", component: WeekSettingsComponent, outlet: "modal", canActivate: [releaseHubAuthGuard] },
   { path: "settings/providers", component: ProviderSettingsComponent, outlet: "modal", canActivate: [releaseHubAuthGuard] },
   { path: "settings/hidden-shows", component: HiddenShowsComponent, outlet: "modal", canActivate: [releaseHubAuthGuard] },
-  { path: "access-denied", component: AccessDeniedComponent },
   { path: "**", redirectTo: "" },
 ];

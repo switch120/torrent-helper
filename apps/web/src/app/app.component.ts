@@ -1,8 +1,17 @@
 import { CommonModule } from "@angular/common";
-import { Component, HostListener, ViewEncapsulation, inject, signal } from "@angular/core";
-import { AuthService } from "@auth0/auth0-angular";
+import {
+  Component,
+  HostListener,
+  OnDestroy,
+  OnInit,
+  ViewEncapsulation,
+  inject,
+  signal,
+} from "@angular/core";
 import { Router, RouterLink, RouterOutlet } from "@angular/router";
-import { googleLoginAuthorizationParams } from "./auth-routing.utils";
+import type { Subscription } from "rxjs";
+import { AuthSessionService } from "./auth-session.service";
+import { ReleaseApiClient } from "./release-api.client";
 import { modalCloseRouteForUrl, modalRoute } from "./route-modal.utils";
 
 @Component({
@@ -13,25 +22,46 @@ import { modalCloseRouteForUrl, modalRoute } from "./route-modal.utils";
   styleUrl: "./app.component.css",
   encapsulation: ViewEncapsulation.None,
 })
-export class AppComponent {
-  readonly auth = inject(AuthService);
+export class AppComponent implements OnInit, OnDestroy {
+  readonly auth = inject(AuthSessionService);
   private readonly router = inject(Router);
+  private readonly api = inject(ReleaseApiClient);
+  private authSubscription: Subscription | null = null;
+  private downloadCountTimer: ReturnType<typeof setInterval> | null = null;
+  private loadingDownloadCount = false;
 
   readonly modalActive = signal(false);
+  readonly activeDownloadCount = signal(0);
   readonly modalRoute = modalRoute;
 
+  ngOnInit(): void {
+    this.authSubscription = this.auth.isAuthenticated$.subscribe((authenticated) => {
+      this.stopDownloadCountRefresh();
+      this.activeDownloadCount.set(0);
+      if (!authenticated) return;
+
+      void this.loadActiveDownloadCount();
+      this.downloadCountTimer = setInterval(() => {
+        void this.loadActiveDownloadCount();
+      }, 5000);
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.stopDownloadCountRefresh();
+    this.authSubscription?.unsubscribe();
+  }
+
   login(): void {
-    this.auth.loginWithRedirect({
-      authorizationParams: googleLoginAuthorizationParams,
-    }).subscribe();
+    void this.router.navigate(["/login"], {
+      queryParams: { returnUrl: this.router.url === "/login" ? "/" : this.router.url },
+    });
   }
 
   logout(): void {
-    this.auth.logout({
-      logoutParams: {
-        returnTo: window.location.origin,
-      },
-    }).subscribe();
+    this.auth.logout().subscribe(() => {
+      void this.router.navigateByUrl("/login");
+    });
   }
 
   onModalActivate(): void {
@@ -50,5 +80,23 @@ export class AppComponent {
   @HostListener("document:keydown.escape")
   onEscape(): void {
     this.closeModal();
+  }
+
+  private async loadActiveDownloadCount(): Promise<void> {
+    if (this.loadingDownloadCount) return;
+    this.loadingDownloadCount = true;
+    try {
+      const response = await this.api.getDownloads();
+      this.activeDownloadCount.set(response.downloads.length);
+    } catch {
+      // Keep the most recent count when Transmission is temporarily unavailable.
+    } finally {
+      this.loadingDownloadCount = false;
+    }
+  }
+
+  private stopDownloadCountRefresh(): void {
+    if (this.downloadCountTimer) clearInterval(this.downloadCountTimer);
+    this.downloadCountTimer = null;
   }
 }

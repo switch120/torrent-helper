@@ -14,7 +14,7 @@ The release hub is an additive local web app. It runs a NestJS API, Angular UI, 
 * Copy `.env.example` to `.env`.
 * Add your VPN provider credentials and settings to `.env`.
 * Add `TMDB_API_KEY` or `TMDB_READ_ACCESS_TOKEN` to `.env` for weekly movie and TV release data.
-* Add Auth0 config to `.env` if you want the browser app to load protected release data.
+* The local release hub signs in with `admin` / `admin@123` by default. Change `LOCAL_AUTH_PASSWORD` and `AUTH_ACCESS_TOKEN_SECRET` before exposing it beyond your own machine.
 * Add `PROWLARR_API_KEY` after configuring Prowlarr indexers if you want torrent search.
 * Add `OPENAI_API_KEY` only if you want optional torrent result reranking, then set `OPENAI_TORRENT_RERANK_ENABLED=true`. Torrent titles and metadata are sent to OpenAI; magnet links are not sent.
 * Confirm the `trans-data` NFS volume in `docker-compose.yml` points at the intended storage location.
@@ -32,7 +32,7 @@ docker compose up -d torrentHost
 Start the release hub after `torrentHost` is healthy:
 
 ```bash
-docker compose up -d releaseDb releaseApi releaseWeb
+npm run release:up
 ```
 
 Or start the full stack:
@@ -44,10 +44,10 @@ docker compose up -d
 Start only the release hub:
 
 ```bash
-docker compose up -d releaseDb releaseApi releaseWeb
+npm run release:up
 ```
 
-Open the release browser at `http://localhost:4200`. The API is available at `http://localhost:3001/api/health`. Compose binds published ports to `127.0.0.1` by default so the stack stays local to the host unless you intentionally change the mappings.
+Open the release browser at `http://localhost:4202`. The API is available at `http://localhost:3002/api/health`. Compose binds published ports to `127.0.0.1` by default so the stack stays local to the host unless you intentionally change the mappings. The release database is published on `127.0.0.1:15433` for host tools; the API uses the internal `releaseDb:5432` Compose address.
 
 Stop the stack:
 
@@ -79,7 +79,7 @@ Cache behavior:
 
 Provider filters:
 * Use the gear on the week browser to manage show filters, selected TV providers, and hidden shows.
-* Selected providers, hidden shows, show-only-favorites, and favorites are stored per Auth0 user in Postgres.
+* Selected providers, hidden shows, show-only-favorites, favorites, and download history are stored per local user in Postgres. The Auth0-era `switch120@gmail.com` account is migrated in place to the `admin` login, preserving its user ID and associated data.
 * The seeded provider list is Apple TV+, Netflix, Max, Disney+, Hulu, Prime, Paramount+, Peacock, HBO, and STARZ.
 
 <p>

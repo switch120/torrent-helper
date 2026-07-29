@@ -7,6 +7,7 @@ export type TorrentRerankRelease = {
   mediaType: "movie" | "tv";
   releaseYear?: number | null;
   seasonNumber?: number | null;
+  episodeNumber?: number | null;
   imdbId?: string | null;
   tmdbId?: number | null;
 };
@@ -84,6 +85,7 @@ export class OpenAiTorrentReranker {
               content:
                 "You filter torrent search results for a personal media release browser. " +
                 "Return only torrents that are specifically for the requested movie or TV release. " +
+                "For a requested TV episode, reject other seasons, other episode numbers, season packs, and complete-series packs. " +
                 "Reject different shows, different movies, anime with similar names, episode packs for a movie, and weak title-only coincidences.",
             },
             {

@@ -7,6 +7,7 @@ import type {
   DownloadDuplicateResponse,
   DownloadHistoryEntry,
   DownloadListResponse,
+  FavoriteSeasonDetail,
   FavoriteShowSummary,
   ReleaseDetail,
   ReleaseWeekResponse,
@@ -108,6 +109,44 @@ export class ReleaseApiClient {
   removeFavorite(showKey: string): Promise<{ deleted: boolean }> {
     return firstValueFrom(
       this.http.delete<{ deleted: boolean }>(`/api/favorites/${encodeURIComponent(showKey)}`),
+    );
+  }
+
+  getFavoriteSeason(showKey: string, seasonNumber: number): Promise<FavoriteSeasonDetail> {
+    return firstValueFrom(
+      this.http.get<FavoriteSeasonDetail>(
+        `/api/favorites/${encodeURIComponent(showKey)}/seasons/${seasonNumber}`,
+      ),
+    );
+  }
+
+  searchFavoriteEpisodeTorrents(
+    showKey: string,
+    seasonNumber: number,
+    episodeNumber: number,
+    quality: TorrentSearchQuality,
+  ): Promise<TorrentSearchResponse> {
+    const params = new HttpParams().set("quality", quality);
+    return firstValueFrom(
+      this.http.get<TorrentSearchResponse>(
+        `/api/favorites/${encodeURIComponent(showKey)}/seasons/${seasonNumber}/episodes/${episodeNumber}/torrents`,
+        { params },
+      ),
+    );
+  }
+
+  addFavoriteEpisodeDownload(
+    showKey: string,
+    seasonNumber: number,
+    episodeNumber: number,
+    magnetLink: string,
+    downloadDir: string,
+  ): Promise<AddDownloadResponse> {
+    return firstValueFrom(
+      this.http.post<AddDownloadResponse>(
+        `/api/favorites/${encodeURIComponent(showKey)}/seasons/${seasonNumber}/episodes/${episodeNumber}/downloads`,
+        { magnetLink, downloadDir },
+      ),
     );
   }
 
