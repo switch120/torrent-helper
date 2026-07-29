@@ -281,6 +281,18 @@ describe("Prowlarr torrent normalization", () => {
             seeders: 50,
           },
           {
+            title: "Example Show S02.E03 2160p WEB-DL",
+            indexer: "Dot separator",
+            infoHash: "7777777777777777777777777777777777777777",
+            seeders: 40,
+          },
+          {
+            title: "Example Show S02 E03 2160p WEB-DL",
+            indexer: "Space separator",
+            infoHash: "8888888888888888888888888888888888888888",
+            seeders: 30,
+          },
+          {
             title: "Example Show S02E04 2160p WEB-DL",
             indexer: "Wrong episode",
             infoHash: "2222222222222222222222222222222222222222",
@@ -332,6 +344,8 @@ describe("Prowlarr torrent normalization", () => {
     expect(searchRequest.searchParams.get("query")).toBe("Example Show S02E03 2160p");
     expect(result.results.map((torrent) => torrent.title)).toEqual([
       "Example Show S02E03 2160p WEB-DL",
+      "Example Show S02.E03 2160p WEB-DL",
+      "Example Show S02 E03 2160p WEB-DL",
     ]);
   });
 

@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse } from "@angular/common/http";
-import { Injectable, inject } from "@angular/core";
+import { DestroyRef, Injectable, inject } from "@angular/core";
 import {
   BehaviorSubject,
   Observable,
@@ -35,6 +35,7 @@ const CROSS_TAB_REFRESH_CANCEL_POLL_MS = 50;
 @Injectable({ providedIn: "root" })
 export class AuthSessionService {
   private readonly http = inject(HttpClient);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly storage = this.browserStorage();
   private readonly storedSession = this.loadStoredSession();
   private readonly sessionSubject = new BehaviorSubject<StoredAuthSession | undefined>(
@@ -49,6 +50,18 @@ export class AuthSessionService {
   readonly isAuthenticated$ = this.session$.pipe(
     map((session) => Boolean(session?.refreshToken)),
   );
+
+  constructor() {
+    if (typeof window === "undefined") return;
+
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key === SESSION_STORAGE_KEY && event.newValue === null) {
+        this.clearSession();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    this.destroyRef.onDestroy(() => window.removeEventListener("storage", onStorage));
+  }
 
   snapshot(): AuthenticatedUser | undefined {
     return this.sessionSubject.value?.user;

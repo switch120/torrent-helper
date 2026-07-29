@@ -430,9 +430,13 @@ function scoreReleaseMatch(
 function matchesTvEpisode(title: string, seasonNumber: number, episodeNumber: number): boolean {
   const season = seasonNumber < 10 ? `0?${seasonNumber}` : String(seasonNumber);
   const episode = episodeNumber < 10 ? `0?${episodeNumber}` : String(episodeNumber);
+  const seasonEpisodeSeparator = String.raw`[^a-z0-9]*`;
   const trailingEpisode =
     String.raw`(?![\s._]*(?:e\d{1,3}\b|[-–]\s*e?\d{1,3}\b))`;
-  const compact = new RegExp(`\\bs${season}e${episode}${trailingEpisode}\\b`, "i");
+  const compact = new RegExp(
+    `\\bs${season}${seasonEpisodeSeparator}e${episode}${trailingEpisode}\\b`,
+    "i",
+  );
   const alternateTrailing =
     String.raw`(?![\s._]*(?:x\d{1,3}\b|[-–]\s*x?\d{1,3}\b))`;
   const alternate = new RegExp(`\\b${season}x${episode}${alternateTrailing}\\b`, "i");

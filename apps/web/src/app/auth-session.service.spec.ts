@@ -86,6 +86,23 @@ describe("AuthSessionService", () => {
     expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
   });
 
+  it("clears the in-memory session when another tab removes stored auth", async () => {
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+
+    localStorage.removeItem("release-hub.auth.session.v1");
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: "release-hub.auth.session.v1",
+        newValue: null,
+      }),
+    );
+
+    expect(service.snapshot()).toBeUndefined();
+    expect(service.hasStoredSession()).toBe(false);
+    await expect(firstValueFrom(service.ensureAccessToken())).resolves.toBeUndefined();
+  });
+
   it("adopts a newer session from another tab when a stale refresh is rejected", async () => {
     service.login("admin", "admin@123").subscribe();
     http.expectOne("/api/auth/login").flush(session);
