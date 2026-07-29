@@ -140,6 +140,7 @@ model DownloadRecord {
 
 model AppUser {
   id            Int              @id @default(autoincrement())
+  localAuthKey  String?          @unique
   username      String           @unique
   passwordHash  String?
   email         String           @unique

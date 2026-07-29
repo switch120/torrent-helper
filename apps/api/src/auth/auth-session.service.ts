@@ -18,9 +18,11 @@ const ACCESS_TOKEN_ISSUER = "release-hub";
 const ACCESS_TOKEN_AUDIENCE = "release-hub-api";
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const DEFAULT_REFRESH_TOKEN_TTL_DAYS = 30;
+const REFRESH_TOKEN_REUSE_GRACE_MS = 30_000;
 const DEFAULT_LOCAL_USERNAME = "admin";
 const DEFAULT_LOCAL_PASSWORD = "admin@123";
 const DEFAULT_LOCAL_EMAIL = "switch120@gmail.com";
+const LOCAL_ADMIN_KEY = "primary";
 
 type AccessTokenPayload = {
   iss: string;
@@ -73,8 +75,15 @@ export class AuthSessionService implements OnModuleInit {
     });
     if (!existing) throw new UnauthorizedException("Invalid refresh token.");
 
-    if (existing.revokedAt || existing.rotatedAt || existing.expiresAt <= new Date()) {
+    const now = new Date();
+    if (existing.revokedAt || existing.expiresAt <= now) {
       await this.revokeRefreshTokenLineage(existing.id);
+      throw new UnauthorizedException("Invalid refresh token.");
+    }
+    if (existing.rotatedAt) {
+      if (now.getTime() - existing.rotatedAt.getTime() > REFRESH_TOKEN_REUSE_GRACE_MS) {
+        await this.revokeRefreshTokenLineage(existing.id);
+      }
       throw new UnauthorizedException("Invalid refresh token.");
     }
 
@@ -85,7 +94,6 @@ export class AuthSessionService implements OnModuleInit {
     }
 
     const nextRefreshToken = this.generateRefreshToken();
-    const now = new Date();
     await this.prisma.$transaction(async (transaction) => {
       const claimed = await transaction.refreshToken.updateMany({
         where: {
@@ -152,15 +160,17 @@ export class AuthSessionService implements OnModuleInit {
     const username = this.normalizedUsername(process.env.LOCAL_AUTH_USERNAME) || DEFAULT_LOCAL_USERNAME;
     const password = process.env.LOCAL_AUTH_PASSWORD || DEFAULT_LOCAL_PASSWORD;
     const email = this.normalizedEmail(process.env.LOCAL_AUTH_EMAIL) || DEFAULT_LOCAL_EMAIL;
-    const existing = await this.prisma.appUser.findFirst({
-      where: {
-        OR: [{ username }, { email }],
-      },
+    const localAdmin = await this.prisma.appUser.findUnique({
+      where: { localAuthKey: LOCAL_ADMIN_KEY },
+    });
+    const existing = localAdmin ?? await this.prisma.appUser.findFirst({
+      where: { OR: [{ username }, { email }] },
     });
 
     if (!existing) {
       await this.prisma.appUser.create({
         data: {
+          localAuthKey: LOCAL_ADMIN_KEY,
           username,
           passwordHash: await this.passwords.hashPassword(password),
           email,
@@ -171,16 +181,35 @@ export class AuthSessionService implements OnModuleInit {
     }
 
     const passwordMatches = await this.passwords.verifyPassword(existing.passwordHash, password);
-    if (existing.username === username && passwordMatches) return;
+    if (
+      existing.localAuthKey === LOCAL_ADMIN_KEY &&
+      existing.username === username &&
+      existing.email === email &&
+      passwordMatches
+    ) {
+      return;
+    }
 
-    await this.prisma.appUser.update({
-      where: { id: existing.id },
-      data: {
-        username,
-        passwordHash: passwordMatches
-          ? existing.passwordHash
-          : await this.passwords.hashPassword(password),
-      },
+    const passwordHash = passwordMatches
+      ? existing.passwordHash
+      : await this.passwords.hashPassword(password);
+    const revokedAt = new Date();
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.appUser.update({
+        where: { id: existing.id },
+        data: {
+          localAuthKey: LOCAL_ADMIN_KEY,
+          username,
+          email,
+          passwordHash,
+        },
+      });
+      if (!passwordMatches) {
+        await transaction.refreshToken.updateMany({
+          where: { userId: existing.id, revokedAt: null },
+          data: { revokedAt },
+        });
+      }
     });
   }
 

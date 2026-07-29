@@ -65,6 +65,15 @@ export class AuthSessionService {
   }
 
   refreshAccessToken(force = false): Observable<string | undefined> {
+    const storedSession = this.loadStoredSession();
+    if (
+      storedSession?.refreshToken &&
+      storedSession.refreshToken !== this.sessionSubject.value?.refreshToken
+    ) {
+      this.accessToken = storedSession.accessToken;
+      this.sessionSubject.next(storedSession);
+    }
+
     const accessToken = this.usableAccessToken();
     if (!force && accessToken) return of(accessToken);
 
@@ -77,6 +86,16 @@ export class AuthSessionService {
         .pipe(
           tap((session) => this.storeSession(session)),
           catchError((error) => {
+            const latestStoredSession = this.loadStoredSession();
+            if (
+              latestStoredSession?.accessToken &&
+              latestStoredSession.user &&
+              latestStoredSession.refreshToken !== refreshToken
+            ) {
+              this.accessToken = latestStoredSession.accessToken;
+              this.sessionSubject.next(latestStoredSession);
+              return of(latestStoredSession as AuthSessionResponse);
+            }
             this.clearSession();
             return throwError(() => error);
           }),

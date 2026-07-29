@@ -83,4 +83,37 @@ describe("AuthSessionService", () => {
     expect(service.hasStoredSession()).toBe(false);
     expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
   });
+
+  it("adopts a newer session from another tab when a stale refresh is rejected", () => {
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+
+    let refreshedAccessToken: string | undefined;
+    service.refreshAccessToken(true).subscribe((accessToken) => {
+      refreshedAccessToken = accessToken;
+    });
+    const staleRefresh = http.expectOne("/api/auth/refresh");
+    expect(staleRefresh.request.body).toEqual({ refreshToken: "refresh-token" });
+
+    const newerSession = {
+      ...session,
+      accessToken: "header.eyJleHAiOjQxMDI0NDQ4MDB9.new-signature",
+      refreshToken: "rotated-refresh-token",
+    };
+    localStorage.setItem(
+      "release-hub.auth.session.v1",
+      JSON.stringify(newerSession),
+    );
+    staleRefresh.flush(
+      { message: "Invalid refresh token." },
+      { status: 401, statusText: "Unauthorized" },
+    );
+
+    expect(refreshedAccessToken).toBe(newerSession.accessToken);
+    expect(service.snapshot()).toEqual(newerSession.user);
+    expect(service.hasStoredSession()).toBe(true);
+    expect(localStorage.getItem("release-hub.auth.session.v1")).toContain(
+      "\"refreshToken\":\"rotated-refresh-token\"",
+    );
+  });
 });

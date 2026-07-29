@@ -11,7 +11,7 @@ export class PrismaService
     const adapter = new PrismaPg({
       connectionString:
         process.env.DATABASE_URL ||
-        "postgresql://release:release@localhost:5433/release_hub",
+        "postgresql://release:release@localhost:15433/release_hub",
     });
 
     super({ adapter });
