@@ -1,8 +1,10 @@
 import { inject } from "@angular/core";
 import { CanActivateFn, Router } from "@angular/router";
-import { firstValueFrom } from "rxjs";
+import { firstValueFrom, from, timeout } from "rxjs";
 import { AuthSessionService } from "./auth-session.service";
 import { ReleaseApiClient } from "./release-api.client";
+
+const authGuardTimeoutMs = 10_000;
 
 export const releaseHubAuthGuard: CanActivateFn = async (_route, state) => {
   const auth = inject(AuthSessionService);
@@ -16,9 +18,13 @@ export const releaseHubAuthGuard: CanActivateFn = async (_route, state) => {
   }
 
   try {
-    const token = await firstValueFrom(auth.ensureAccessToken());
+    const token = await firstValueFrom(
+      auth.ensureAccessToken().pipe(timeout({ first: authGuardTimeoutMs })),
+    );
     if (!token) throw new Error("No access token is available.");
-    const user = await api.getProfile();
+    const user = await firstValueFrom(
+      from(api.getProfile()).pipe(timeout({ first: authGuardTimeoutMs })),
+    );
     auth.storeUserSnapshot(user);
     return true;
   } catch {

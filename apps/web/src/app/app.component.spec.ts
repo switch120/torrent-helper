@@ -37,7 +37,14 @@ describe("AppComponent download navigation badge", () => {
     vi.clearAllMocks();
     authenticated.next(true);
     api.getDownloads.mockResolvedValue({
-      downloads: [{ id: 1 }, { id: 2 }],
+      downloads: [
+        { id: 1, status: "downloading", rawStatus: 4, percentDone: 0.5 },
+        { id: 2, status: "queued", rawStatus: 3, percentDone: 0 },
+        { id: 3, status: "stopped", rawStatus: 0, percentDone: 0.2 },
+        { id: 4, status: "queued", rawStatus: 5, percentDone: 1 },
+        { id: 5, status: "seeding", rawStatus: 6, percentDone: 1 },
+        { id: 6, status: "error", rawStatus: 4, percentDone: 0.5 },
+      ],
       proxy: null,
     });
     TestBed.configureTestingModule({

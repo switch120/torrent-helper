@@ -423,12 +423,15 @@ function scoreReleaseMatch(
 }
 
 function matchesTvEpisode(title: string, seasonNumber: number, episodeNumber: number): boolean {
-  const season = String(seasonNumber).padStart(2, "0");
-  const episode = String(episodeNumber).padStart(2, "0");
-  const compact = new RegExp(`\\bs0?${seasonNumber}e0?${episodeNumber}\\b`, "i");
-  const alternate = new RegExp(`\\b0?${seasonNumber}x0?${episodeNumber}\\b`, "i");
-  const multiEpisode = new RegExp(`\\bs${season}e${episode}(?:e\\d{2,3}|-e?\\d{2,3})\\b`, "i");
-  return compact.test(title) || alternate.test(title) || multiEpisode.test(title);
+  const season = seasonNumber < 10 ? `0?${seasonNumber}` : String(seasonNumber);
+  const episode = episodeNumber < 10 ? `0?${episodeNumber}` : String(episodeNumber);
+  const trailingEpisode =
+    String.raw`(?![\s._]*(?:e\d{1,3}\b|[-–]\s*e?\d{1,3}\b))`;
+  const compact = new RegExp(`\\bs${season}e${episode}${trailingEpisode}\\b`, "i");
+  const alternateTrailing =
+    String.raw`(?![\s._]*(?:x\d{1,3}\b|[-–]\s*x?\d{1,3}\b))`;
+  const alternate = new RegExp(`\\b${season}x${episode}${alternateTrailing}\\b`, "i");
+  return compact.test(title) || alternate.test(title);
 }
 
 function looksEpisodic(title: string): boolean {

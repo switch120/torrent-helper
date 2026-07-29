@@ -87,7 +87,15 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loadingDownloadCount = true;
     try {
       const response = await this.api.getDownloads();
-      this.activeDownloadCount.set(response.downloads.length);
+      this.activeDownloadCount.set(
+        response.downloads.filter(
+          (download) =>
+            download.rawStatus >= 1 &&
+            download.rawStatus <= 4 &&
+            download.percentDone < 1 &&
+            download.status !== "error",
+        ).length,
+      );
     } catch {
       // Keep the most recent count when Transmission is temporarily unavailable.
     } finally {

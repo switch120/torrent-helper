@@ -21,6 +21,7 @@ type Clock = () => Date;
 
 const posterBaseUrl = "https://image.tmdb.org/t/p/w500";
 const backdropBaseUrl = "https://image.tmdb.org/t/p/w1280";
+const favoriteMetadataRefreshMs = 6 * 60 * 60 * 1000;
 
 @Injectable()
 export class FavoritesService {
@@ -38,7 +39,52 @@ export class FavoritesService {
       where: { userId },
       orderBy: [{ title: "asc" }],
     });
-    return records.map(mapFavoriteShow);
+    const now = this.clock();
+    const refreshed = await Promise.all(records.map(async (record) => {
+      if (
+        !record.tmdbId ||
+        !this.tmdb.isConfigured() ||
+        (record.fetchedAt &&
+          now.getTime() - record.fetchedAt.getTime() < favoriteMetadataRefreshMs)
+      ) {
+        return record;
+      }
+
+      try {
+        const detail = await this.tmdb.getTvDetail(record.tmdbId);
+        const lastEpisode = mapEpisode(detail.last_episode_to_air);
+        const nextEpisode = mapEpisode(detail.next_episode_to_air);
+        const status = detail.status ?? record.status;
+        return await this.prisma.favoriteShow.update({
+          where: { id: record.id },
+          data: {
+            title: detail.name || detail.original_name || record.title,
+            posterUrl: imageUrl(detail.poster_path, posterBaseUrl) || record.posterUrl,
+            backdropUrl: imageUrl(detail.backdrop_path, backdropBaseUrl) || record.backdropUrl,
+            overview: detail.overview ?? record.overview,
+            status,
+            isCanceled: status === "Canceled",
+            currentSeasonNumber:
+              nextEpisode?.seasonNumber ??
+              lastEpisode?.seasonNumber ??
+              detail.number_of_seasons ??
+              record.currentSeasonNumber,
+            numberOfSeasons: detail.number_of_seasons ?? record.numberOfSeasons,
+            numberOfEpisodes: detail.number_of_episodes ?? record.numberOfEpisodes,
+            lastAirDate: detail.last_air_date
+              ? new Date(`${detail.last_air_date}T00:00:00.000Z`)
+              : record.lastAirDate,
+            lastEpisode: lastEpisode ?? Prisma.JsonNull,
+            nextEpisode: nextEpisode ?? Prisma.JsonNull,
+            raw: detail as Prisma.InputJsonValue,
+            fetchedAt: now,
+          },
+        });
+      } catch {
+        return record;
+      }
+    }));
+    return refreshed.map(mapFavoriteShow);
   }
 
   async addFavorite(userId: number, eventId: string): Promise<FavoriteShowSummary> {
@@ -83,10 +129,6 @@ export class FavoritesService {
     if (!favorite.tmdbId || !this.tmdb.isConfigured()) {
       throw new BadRequestException("Episode browsing requires a TMDB-backed favorite.");
     }
-    if (favorite.numberOfSeasons && seasonNumber > favorite.numberOfSeasons) {
-      throw new NotFoundException("Season was not found.");
-    }
-
     const season = await this.tmdb.getTvSeasonDetail(favorite.tmdbId, seasonNumber);
     return mapFavoriteSeason(showKey, seasonNumber, season);
   }

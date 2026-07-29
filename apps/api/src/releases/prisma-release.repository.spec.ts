@@ -33,6 +33,59 @@ describe("PrismaReleaseRepository", () => {
     await expect(repository.claimDownload(7, "hash:abcdef")).resolves.toBe(false);
   });
 
+  it("removes the download claim when deleting its last history record", async () => {
+    const transaction = {
+      downloadRecord: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            magnetHash: "ABCDEF",
+            magnetLink: "magnet:?xt=urn:btih:ABCDEF",
+          })
+          .mockResolvedValueOnce(null),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      downloadClaim: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.deleteDownloadRecord(7, 12)).resolves.toBe(true);
+
+    expect(transaction.downloadClaim.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 7, magnetKey: "hash:abcdef" },
+    });
+  });
+
+  it("keeps the claim while another matching history record remains", async () => {
+    const transaction = {
+      downloadRecord: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            magnetHash: "ABCDEF",
+            magnetLink: "magnet:?xt=urn:btih:ABCDEF",
+          })
+          .mockResolvedValueOnce({ id: 13 }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      downloadClaim: {
+        deleteMany: vi.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.deleteDownloadRecord(7, 12)).resolves.toBe(true);
+    expect(transaction.downloadClaim.deleteMany).not.toHaveBeenCalled();
+  });
+
   it("preserves supplemental digital source metadata from cached movie rows", async () => {
     const prisma = {
       tmdbDigitalMovie: {

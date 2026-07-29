@@ -138,4 +138,27 @@ describe("AuthSessionService", () => {
     expect(service.hasStoredSession()).toBe(false);
     expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
   });
+
+  it("does not restore a session when refresh completes after logout", () => {
+    service.login("admin", "admin@123").subscribe();
+    http.expectOne("/api/auth/login").flush(session);
+    let refreshedAccessToken: string | undefined = "pending";
+    service.refreshAccessToken(true).subscribe((accessToken) => {
+      refreshedAccessToken = accessToken;
+    });
+    const refresh = http.expectOne("/api/auth/refresh");
+
+    service.logout().subscribe();
+    const logout = http.expectOne("/api/auth/logout");
+    logout.flush({ loggedOut: true });
+    refresh.flush({
+      ...session,
+      accessToken: "header.eyJleHAiOjQxMDI0NDQ4MDB9.rotated",
+      refreshToken: "late-refresh-token",
+    });
+
+    expect(refreshedAccessToken).toBeUndefined();
+    expect(service.hasStoredSession()).toBe(false);
+    expect(localStorage.getItem("release-hub.auth.session.v1")).toBeNull();
+  });
 });

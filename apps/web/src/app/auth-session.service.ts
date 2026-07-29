@@ -38,6 +38,7 @@ export class AuthSessionService {
   );
   private accessToken = this.storedSession?.accessToken;
   private refreshRequest?: Observable<AuthSessionResponse>;
+  private sessionGeneration = 0;
 
   readonly session$ = this.sessionSubject.asObservable();
   readonly user$ = this.session$.pipe(map((session) => session?.user));
@@ -81,10 +82,15 @@ export class AuthSessionService {
     if (!refreshToken) return of(undefined);
 
     if (!this.refreshRequest) {
-      this.refreshRequest = this.http
+      const requestGeneration = this.sessionGeneration;
+      const request = this.http
         .post<AuthSessionResponse>("/api/auth/refresh", { refreshToken })
         .pipe(
-          tap((session) => this.storeSession(session)),
+          tap((session) => {
+            if (this.sessionGeneration === requestGeneration) {
+              this.storeSession(session);
+            }
+          }),
           catchError((error) => {
             const latestStoredSession = this.loadStoredSession();
             if (
@@ -100,13 +106,23 @@ export class AuthSessionService {
             return throwError(() => error);
           }),
           finalize(() => {
-            this.refreshRequest = undefined;
+            if (this.refreshRequest === request) {
+              this.refreshRequest = undefined;
+            }
           }),
           shareReplay({ bufferSize: 1, refCount: false }),
         );
+      this.refreshRequest = request;
     }
 
-    return this.refreshRequest.pipe(map((session) => session.accessToken));
+    const subscriberGeneration = this.sessionGeneration;
+    return this.refreshRequest.pipe(
+      map((session) =>
+        this.sessionGeneration === subscriberGeneration
+          ? session.accessToken
+          : undefined,
+      ),
+    );
   }
 
   storeUserSnapshot(user: AuthenticatedUser): void {
@@ -133,6 +149,7 @@ export class AuthSessionService {
   }
 
   clearSession(): void {
+    this.sessionGeneration += 1;
     this.accessToken = undefined;
     this.refreshRequest = undefined;
     this.storage?.removeItem(SESSION_STORAGE_KEY);

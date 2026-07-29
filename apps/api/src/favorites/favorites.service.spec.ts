@@ -4,6 +4,79 @@ import type { TorrentResult } from "../torrents/torrent.types";
 import { FavoritesService, selectTopEpisodeTorrents } from "./favorites.service";
 
 describe("FavoritesService", () => {
+  it("refreshes stale TMDB metadata before listing season choices", async () => {
+    const staleRecord = {
+      id: 1,
+      showKey: "tmdb:100",
+      tmdbId: 100,
+      sourceTitleId: 500,
+      title: "Example Show",
+      posterUrl: "poster",
+      backdropUrl: "backdrop",
+      overview: "A show",
+      status: "Returning Series",
+      isCanceled: false,
+      currentSeasonNumber: 2,
+      numberOfSeasons: 2,
+      numberOfEpisodes: 12,
+      lastAirDate: new Date("2026-05-01T00:00:00.000Z"),
+      lastEpisode: null,
+      nextEpisode: null,
+      releaseContext: null,
+      preferredDownloadDir: "/data/TV/Example Show",
+      raw: null,
+      fetchedAt: new Date("2026-05-01T00:00:00.000Z"),
+    };
+    const favoriteShow = {
+      findMany: vi.fn().mockResolvedValue([staleRecord]),
+      update: vi.fn(async ({ data }) => ({ ...staleRecord, ...data })),
+    };
+    const tmdb = {
+      isConfigured: vi.fn().mockReturnValue(true),
+      getTvDetail: vi.fn().mockResolvedValue({
+        id: 100,
+        name: "Example Show",
+        status: "Returning Series",
+        number_of_seasons: 3,
+        number_of_episodes: 20,
+        last_air_date: "2026-07-20",
+        last_episode_to_air: {
+          name: "Season Three",
+          season_number: 3,
+          episode_number: 1,
+          air_date: "2026-07-20",
+        },
+      }),
+    };
+    const service = new FavoritesService(
+      { favoriteShow } as never,
+      {} as never,
+      tmdb as never,
+      { searchRelease: vi.fn() } as never,
+      { addDownloadForRelease: vi.fn() } as never,
+      () => new Date("2026-07-29T12:00:00.000Z"),
+    );
+
+    await expect(service.listFavorites(7)).resolves.toEqual([
+      expect.objectContaining({
+        currentSeasonNumber: 3,
+        numberOfSeasons: 3,
+        numberOfEpisodes: 20,
+      }),
+    ]);
+    expect(tmdb.getTvDetail).toHaveBeenCalledWith(100);
+    expect(favoriteShow.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 1 },
+        data: expect.objectContaining({
+          currentSeasonNumber: 3,
+          numberOfSeasons: 3,
+          fetchedAt: new Date("2026-07-29T12:00:00.000Z"),
+        }),
+      }),
+    );
+  });
+
   it("adds a TV release as an idempotent favorite with a TMDB snapshot", async () => {
     const prisma = {
       favoriteShow: {
@@ -104,28 +177,28 @@ describe("FavoritesService", () => {
         findUnique: vi.fn().mockResolvedValue({
           showKey: "tmdb:100",
           tmdbId: 100,
-          numberOfSeasons: 3,
+          numberOfSeasons: 2,
         }),
       },
     };
     const tmdb = {
       isConfigured: vi.fn().mockReturnValue(true),
       getTvSeasonDetail: vi.fn().mockResolvedValue({
-        season_number: 2,
+        season_number: 3,
         air_date: "2026-01-01",
         overview: "Second season",
         poster_path: "/season-two.jpg",
         episodes: [
           {
             name: "Second",
-            season_number: 2,
+            season_number: 3,
             episode_number: 2,
             air_date: "2026-01-08",
             overview: "Episode two",
           },
           {
             name: "First",
-            season_number: 2,
+            season_number: 3,
             episode_number: 1,
             air_date: "2026-01-01",
             overview: "Episode one",
@@ -141,29 +214,29 @@ describe("FavoritesService", () => {
       { addDownloadForRelease: vi.fn() } as never,
     );
 
-    const season = await service.getSeason(7, "tmdb:100", 2);
+    const season = await service.getSeason(7, "tmdb:100", 3);
 
     expect(prisma.favoriteShow.findUnique).toHaveBeenCalledWith({
       where: { userId_showKey: { userId: 7, showKey: "tmdb:100" } },
     });
-    expect(tmdb.getTvSeasonDetail).toHaveBeenCalledWith(100, 2);
+    expect(tmdb.getTvSeasonDetail).toHaveBeenCalledWith(100, 3);
     expect(season).toEqual({
       showKey: "tmdb:100",
-      seasonNumber: 2,
+      seasonNumber: 3,
       airDate: "2026-01-01",
       overview: "Second season",
       posterUrl: "https://image.tmdb.org/t/p/w500/season-two.jpg",
       episodes: [
         {
           name: "First",
-          seasonNumber: 2,
+          seasonNumber: 3,
           episodeNumber: 1,
           airDate: "2026-01-01",
           overview: "Episode one",
         },
         {
           name: "Second",
-          seasonNumber: 2,
+          seasonNumber: 3,
           episodeNumber: 2,
           airDate: "2026-01-08",
           overview: "Episode two",

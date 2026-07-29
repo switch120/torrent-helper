@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type {
@@ -497,10 +498,38 @@ export class PrismaReleaseRepository implements ReleaseRepository {
   }
 
   async deleteDownloadRecord(userId: number, id: number): Promise<boolean> {
-    const result = await this.prisma.downloadRecord.deleteMany({
-      where: { id, userId },
+    return this.prisma.$transaction(async (transaction) => {
+      const record = await transaction.downloadRecord.findFirst({
+        where: { id, userId },
+        select: { magnetHash: true, magnetLink: true },
+      });
+      if (!record) return false;
+
+      const result = await transaction.downloadRecord.deleteMany({
+        where: { id, userId },
+      });
+      if (result.count !== 1) return false;
+
+      const remaining = await transaction.downloadRecord.findFirst({
+        where: {
+          userId,
+          OR: [
+            ...(record.magnetHash ? [{ magnetHash: record.magnetHash }] : []),
+            { magnetLink: record.magnetLink },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!remaining) {
+        await transaction.downloadClaim.deleteMany({
+          where: {
+            userId,
+            magnetKey: downloadClaimKey(record.magnetLink, record.magnetHash),
+          },
+        });
+      }
+      return true;
     });
-    return result.count > 0;
   }
 }
 
@@ -514,6 +543,12 @@ function toDateOnly(value: Date): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function downloadClaimKey(magnetLink: string, magnetHash: string | null): string {
+  return magnetHash
+    ? `hash:${magnetHash.toLowerCase()}`
+    : `link:${createHash("md5").update(magnetLink).digest("hex")}`;
 }
 
 function normalizeReleaseSources(value: unknown): NormalizedRelease["sources"] {

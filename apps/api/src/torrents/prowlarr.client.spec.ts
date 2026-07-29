@@ -292,6 +292,24 @@ describe("Prowlarr torrent normalization", () => {
             infoHash: "3333333333333333333333333333333333333333",
             seeders: 300,
           },
+          {
+            title: "Example Show S02E03E04 2160p WEB-DL",
+            indexer: "Multi episode",
+            infoHash: "4444444444444444444444444444444444444444",
+            seeders: 400,
+          },
+          {
+            title: "Example Show S02E03-E06 2160p WEB-DL",
+            indexer: "Episode range",
+            infoHash: "5555555555555555555555555555555555555555",
+            seeders: 450,
+          },
+          {
+            title: "Example Show 2x03-06 2160p WEB-DL",
+            indexer: "Alternate range",
+            infoHash: "6666666666666666666666666666666666666666",
+            seeders: 350,
+          },
         ]));
       },
     });
