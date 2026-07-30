@@ -2,6 +2,152 @@ import { describe, expect, it, vi } from "vitest";
 import { PrismaReleaseRepository } from "./prisma-release.repository";
 
 describe("PrismaReleaseRepository", () => {
+  it("creates and releases atomic user-scoped download claims", async () => {
+    const prisma = {
+      downloadClaim: {
+        create: vi.fn().mockResolvedValue({ userId: 7 }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.claimDownload(7, "hash:abcdef")).resolves.toBe(true);
+    await repository.releaseDownloadClaim(7, "hash:abcdef");
+
+    expect(prisma.downloadClaim.create).toHaveBeenCalledWith({
+      data: { userId: 7, magnetKey: "hash:abcdef" },
+    });
+    expect(prisma.downloadClaim.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 7, magnetKey: "hash:abcdef" },
+    });
+  });
+
+  it("returns false when a concurrent download claim already exists", async () => {
+    const prisma = {
+      downloadClaim: {
+        create: vi.fn().mockRejectedValue({ code: "P2002" }),
+      },
+      $executeRaw: vi.fn().mockResolvedValue(0),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.claimDownload(7, "hash:abcdef")).resolves.toBe(false);
+  });
+
+  it("recovers a stale orphan claim before retrying the atomic create", async () => {
+    const prisma = {
+      downloadClaim: {
+        create: vi
+          .fn()
+          .mockRejectedValueOnce({ code: "P2002" })
+          .mockResolvedValueOnce({ userId: 7 }),
+      },
+      $executeRaw: vi.fn().mockResolvedValue(1),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.claimDownload(7, "hash:abcdef")).resolves.toBe(true);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.downloadClaim.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes the download claim when deleting its last history record", async () => {
+    const transaction = {
+      downloadRecord: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            magnetHash: "ABCDEF",
+            magnetLink: "magnet:?xt=urn:btih:ABCDEF",
+          })
+          .mockResolvedValueOnce(null),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      downloadClaim: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.deleteDownloadRecord(7, 12)).resolves.toBe(true);
+
+    expect(transaction.downloadClaim.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 7,
+        magnetKey: {
+          in: expect.arrayContaining([
+            "hash:abcdef",
+            expect.stringMatching(/^link:[a-f0-9]{32}$/),
+          ]),
+        },
+      },
+    });
+  });
+
+  it("removes the original link claim after Transmission returns a hash for a btmh magnet", async () => {
+    const magnetLink = "magnet:?xt=urn:btmh:1220abcdef";
+    const transaction = {
+      downloadRecord: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            magnetHash: "0123456789ABCDEF",
+            magnetLink,
+          })
+          .mockResolvedValueOnce(null),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      downloadClaim: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 2 }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.deleteDownloadRecord(7, 12)).resolves.toBe(true);
+    expect(transaction.downloadClaim.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 7,
+        magnetKey: {
+          in: expect.arrayContaining([
+            "hash:0123456789abcdef",
+            expect.stringMatching(/^link:[a-f0-9]{32}$/),
+          ]),
+        },
+      },
+    });
+  });
+
+  it("keeps the claim while another matching history record remains", async () => {
+    const transaction = {
+      downloadRecord: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            magnetHash: "ABCDEF",
+            magnetLink: "magnet:?xt=urn:btih:ABCDEF",
+          })
+          .mockResolvedValueOnce({ id: 13 }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      downloadClaim: {
+        deleteMany: vi.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback) => callback(transaction)),
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.deleteDownloadRecord(7, 12)).resolves.toBe(true);
+    expect(transaction.downloadClaim.deleteMany).not.toHaveBeenCalled();
+  });
+
   it("preserves supplemental digital source metadata from cached movie rows", async () => {
     const prisma = {
       tmdbDigitalMovie: {
@@ -47,6 +193,68 @@ describe("PrismaReleaseRepository", () => {
     ]);
   });
 
+  it("filters cached theatrical fallback movie rows from digital week reads", async () => {
+    const prisma = {
+      tmdbDigitalMovie: {
+        findMany: vi.fn(async () => [
+          {
+            eventId: "tmdb:digital:1275779:2026-06-12",
+            tmdbId: 1275779,
+            title: "Disclosure Day",
+            titleType: "movie",
+            posterUrl: "https://image.tmdb.org/t/p/w342/disclosure.jpg",
+            releaseDate: new Date("2026-06-12T00:00:00.000Z"),
+            primaryReleaseDate: new Date("2026-06-02T00:00:00.000Z"),
+            popularity: 339.09,
+            voteCount: 380,
+            voteAverage: 6.9,
+            isFeaturedDigital: true,
+            originalLanguage: "en",
+            isInternational: false,
+            isDubbed: false,
+            raw: {
+              sourceTitleId: 1275779,
+              releaseSource: "tmdb",
+              sourceName: "New release",
+              isDigitalDateFallback: true,
+            },
+          },
+          {
+            eventId: "tmdb:digital:1110034:2026-06-12",
+            tmdbId: 1110034,
+            title: "Kraken",
+            titleType: "movie",
+            posterUrl: "https://image.tmdb.org/t/p/w342/kraken.jpg",
+            releaseDate: new Date("2026-06-12T00:00:00.000Z"),
+            primaryReleaseDate: new Date("2026-06-12T00:00:00.000Z"),
+            popularity: 38.82,
+            voteCount: 150,
+            voteAverage: 6.2,
+            isFeaturedDigital: true,
+            originalLanguage: "no",
+            isInternational: true,
+            isDubbed: false,
+            raw: {
+              sourceTitleId: 1110034,
+              releaseSource: "tmdb",
+              sourceName: "Digital release",
+              isDigitalDateFallback: false,
+            },
+          },
+        ]),
+      },
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.getTmdbDigitalMovies("2026-06-08", "2026-06-14")).resolves.toEqual([
+      expect.objectContaining({
+        eventId: "tmdb:digital:1110034:2026-06-12",
+        title: "Kraken",
+        sourceName: "Digital release",
+      }),
+    ]);
+  });
+
   it("accepts TMDB digital movie cache rows written by the current client policy", async () => {
     const prisma = {
       tmdbDigitalWeekCache: {
@@ -57,7 +265,7 @@ describe("PrismaReleaseRepository", () => {
           status: "fresh",
           warning: null,
           rawResponse: {
-            digitalDatePolicy: "original-us-digital-with-provider-backed-fallback-v2",
+            digitalDatePolicy: "original-us-digital-only-v3",
           },
         })),
       },

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type {
@@ -13,7 +14,8 @@ import type { NormalizedRelease } from "./release.types";
 import type { ReleaseDetail } from "./release-detail.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
-const tmdbDigitalDatePolicy = "original-us-digital-with-provider-backed-fallback-v2";
+const tmdbDigitalDatePolicy = "original-us-digital-only-v3";
+const downloadClaimStaleMs = 10 * 60 * 1000;
 
 @Injectable()
 export class PrismaReleaseRepository implements ReleaseRepository {
@@ -64,9 +66,11 @@ export class PrismaReleaseRepository implements ReleaseRepository {
       orderBy: [{ releaseDate: "asc" }, { title: "asc" }],
     });
 
-    return movies.map((movie) => {
+    return movies.flatMap((movie) => {
       const raw = isRecord(movie.raw) ? movie.raw : {};
-      return {
+      if (raw.isDigitalDateFallback === true) return [];
+
+      return [{
         eventId: movie.eventId,
         sourceTitleId: normalizeNumber(raw.sourceTitleId) ?? movie.tmdbId,
         releaseSource: normalizeReleaseSource(raw.releaseSource),
@@ -80,7 +84,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         posterUrl: movie.posterUrl,
         releaseDate: toDateOnly(movie.releaseDate),
         sourceId: normalizeNumber(raw.sourceId) ?? 0,
-        sourceName: normalizeString(raw.sourceName) || (raw.isDigitalDateFallback === true ? "New release" : "Digital release"),
+        sourceName: normalizeString(raw.sourceName) || "Digital release",
         sourceType: "digital",
         seasonNumber: null,
         isOriginal: Boolean(raw.isOriginal),
@@ -89,12 +93,12 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         voteCount: movie.voteCount,
         voteAverage: movie.voteAverage,
         isFeaturedDigital: movie.isFeaturedDigital,
-        isDigitalDateFallback: raw.isDigitalDateFallback === true,
+        isDigitalDateFallback: false,
         originalLanguage: movie.originalLanguage,
         isInternational: movie.isInternational,
         isDubbed: movie.isDubbed,
         sources: normalizeReleaseSources(raw.sources),
-      };
+      }];
     });
   }
 
@@ -433,6 +437,54 @@ export class PrismaReleaseRepository implements ReleaseRepository {
     return mapDownloadRecord(record);
   }
 
+  async claimDownload(userId: number, magnetKey: string): Promise<boolean> {
+    try {
+      await this.prisma.downloadClaim.create({
+        data: { userId, magnetKey },
+      });
+      return true;
+    } catch (error) {
+      if (!isRecord(error) || error.code !== "P2002") throw error;
+    }
+
+    const staleBefore = new Date(Date.now() - downloadClaimStaleMs);
+    const released = await this.prisma.$executeRaw(Prisma.sql`
+      DELETE FROM "DownloadClaim" AS c
+      WHERE c."userId" = ${userId}
+        AND c."magnetKey" = ${magnetKey}
+        AND c."createdAt" <= ${staleBefore}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "DownloadRecord" AS d
+          WHERE d."userId" = c."userId"
+            AND (
+              (
+                d."magnetHash" IS NOT NULL
+                AND c."magnetKey" = CONCAT('hash:', LOWER(d."magnetHash"))
+              )
+              OR c."magnetKey" = CONCAT('link:', MD5(d."magnetLink"))
+            )
+        )
+    `);
+    if (released !== 1) return false;
+
+    try {
+      await this.prisma.downloadClaim.create({
+        data: { userId, magnetKey },
+      });
+      return true;
+    } catch (error) {
+      if (isRecord(error) && error.code === "P2002") return false;
+      throw error;
+    }
+  }
+
+  async releaseDownloadClaim(userId: number, magnetKey: string): Promise<void> {
+    await this.prisma.downloadClaim.deleteMany({
+      where: { userId, magnetKey },
+    });
+  }
+
   async getDownloadRecords(userId?: number): Promise<DownloadRecordSnapshot[]> {
     const records = await this.prisma.downloadRecord.findMany({
       where: typeof userId === "number" ? { userId } : undefined,
@@ -477,10 +529,42 @@ export class PrismaReleaseRepository implements ReleaseRepository {
   }
 
   async deleteDownloadRecord(userId: number, id: number): Promise<boolean> {
-    const result = await this.prisma.downloadRecord.deleteMany({
-      where: { id, userId },
+    return this.prisma.$transaction(async (transaction) => {
+      const record = await transaction.downloadRecord.findFirst({
+        where: { id, userId },
+        select: { magnetHash: true, magnetLink: true },
+      });
+      if (!record) return false;
+
+      const result = await transaction.downloadRecord.deleteMany({
+        where: { id, userId },
+      });
+      if (result.count !== 1) return false;
+
+      const remaining = await transaction.downloadRecord.findFirst({
+        where: {
+          userId,
+          OR: [
+            ...(record.magnetHash ? [{ magnetHash: record.magnetHash }] : []),
+            { magnetLink: record.magnetLink },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!remaining) {
+        const magnetKeys = [
+          downloadClaimKey(record.magnetLink, record.magnetHash),
+          downloadClaimKey(record.magnetLink, null),
+        ];
+        await transaction.downloadClaim.deleteMany({
+          where: {
+            userId,
+            magnetKey: { in: [...new Set(magnetKeys)] },
+          },
+        });
+      }
+      return true;
     });
-    return result.count > 0;
   }
 }
 
@@ -494,6 +578,12 @@ function toDateOnly(value: Date): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function downloadClaimKey(magnetLink: string, magnetHash: string | null): string {
+  return magnetHash
+    ? `hash:${magnetHash.toLowerCase()}`
+    : `link:${createHash("md5").update(magnetLink).digest("hex")}`;
 }
 
 function normalizeReleaseSources(value: unknown): NormalizedRelease["sources"] {

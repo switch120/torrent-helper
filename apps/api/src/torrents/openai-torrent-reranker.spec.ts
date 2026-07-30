@@ -35,6 +35,8 @@ describe("OpenAiTorrentReranker", () => {
         title: "Beast",
         mediaType: "movie",
         releaseYear: 2026,
+        seasonNumber: 2,
+        episodeNumber: 8,
         imdbId: "tt7708226",
         tmdbId: 1292415,
       },
@@ -50,7 +52,15 @@ describe("OpenAiTorrentReranker", () => {
       ],
     });
 
+    const request = JSON.parse(requestBody) as {
+      input: Array<{ role: string; content: string }>;
+    };
+    const userPayload = JSON.parse(
+      request.input.find((item) => item.role === "user")?.content || "{}",
+    ) as { release?: { seasonNumber?: number; episodeNumber?: number } };
+
     expect(requestBody).toContain("Beast Games S02E08");
+    expect(userPayload.release).toMatchObject({ seasonNumber: 2, episodeNumber: 8 });
     expect(requestBody).not.toContain("magnet:?xt=urn:btih");
     expect(result.warning).toBeNull();
     expect(result.results.map((torrent) => torrent.title)).toEqual([

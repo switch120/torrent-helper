@@ -39,6 +39,21 @@
   gap: 6px;
 }
 
+.nav-count-badge {
+  display: inline-grid;
+  min-width: 20px;
+  min-height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #fff;
+  background: #bf4d27;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 2px 7px rgba(122, 47, 24, 0.24);
+}
+
 .nav-icon {
   width: 18px;
   height: 18px;
@@ -971,6 +986,95 @@ h1 {
   margin: 42px auto;
 }
 
+.login-shell {
+  min-height: calc(100vh - 92px);
+  display: grid;
+  place-items: center;
+  padding: 36px 18px 72px;
+}
+
+.login-card {
+  width: min(100%, 430px);
+  padding: 42px;
+  border: 1px solid rgba(27, 117, 141, 0.22);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(19, 52, 62, 0.14);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(238, 247, 248, 0.94)),
+    var(--surface);
+}
+
+.login-mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 24px;
+  border-radius: 15px;
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  background: linear-gradient(135deg, var(--accent), #124d61);
+  box-shadow: 0 10px 24px rgba(27, 117, 141, 0.24);
+}
+
+.login-card h1 {
+  margin: 6px 0 10px;
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  line-height: 1;
+}
+
+.login-copy {
+  margin: 0 0 28px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.login-form {
+  display: grid;
+  gap: 18px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.login-form input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  font: inherit;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.login-form input:focus {
+  outline: 3px solid rgba(27, 117, 141, 0.16);
+  border-color: var(--accent);
+}
+
+.login-error {
+  margin: -4px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #8a271e;
+  font-size: 0.9rem;
+  background: #f9e4e0;
+}
+
+.login-submit {
+  min-height: 48px;
+  margin-top: 4px;
+  justify-content: center;
+}
+
 .access-actions {
   display: flex;
   gap: 12px;
@@ -1408,6 +1512,333 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.episode-browser-entry {
+  padding: 0 14px 14px;
+}
+
+.episode-browser-toggle {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  width: 100%;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--ink);
+  background:
+    linear-gradient(90deg, rgba(20, 119, 146, 0.1), transparent 34%),
+    var(--panel-alt);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.episode-browser-toggle:hover:not(:disabled),
+.episode-browser-toggle:focus-visible {
+  border-color: rgba(20, 119, 146, 0.48);
+  box-shadow: 0 6px 18px rgba(20, 119, 146, 0.1);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.episode-browser-toggle:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.episode-browser-toggle > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.episode-browser-toggle small,
+.episode-browser-heading p,
+.episode-torrent-heading small {
+  color: var(--muted);
+}
+
+.episode-browser-chevron {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--panel);
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+
+.episode-browser-panel {
+  border-top: 1px solid var(--line);
+  padding: 18px;
+  background:
+    linear-gradient(135deg, rgba(20, 119, 146, 0.05), transparent 44%),
+    #f7faf8;
+  animation: episode-panel-in 180ms ease-out;
+}
+
+.episode-browser-heading,
+.episode-torrent-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: end;
+}
+
+.episode-browser-heading h3,
+.episode-browser-heading p,
+.episode-torrent-heading strong,
+.episode-torrent-heading small {
+  margin: 0;
+}
+
+.episode-browser-heading h3 {
+  font-size: 1.45rem;
+}
+
+.episode-browser-heading > div:first-child,
+.episode-torrent-heading > div {
+  display: grid;
+  gap: 5px;
+}
+
+.episode-browser-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.episode-browser-controls label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.episode-browser-controls select {
+  min-width: 150px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 10px;
+  color: var(--ink);
+  background: var(--panel);
+  font: inherit;
+  font-weight: 750;
+  text-transform: none;
+}
+
+.episode-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.episode-row-shell {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.episode-row-summary {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 130px 76px;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  padding: 12px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.episode-row-summary:hover,
+.episode-row-summary:focus-visible,
+.episode-row-summary[aria-expanded="true"] {
+  background: rgba(20, 119, 146, 0.07);
+  outline: none;
+}
+
+.episode-index {
+  color: var(--accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.episode-row-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.episode-row-download-status {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #176a90;
+  background: #d9eef3;
+  font-size: 0.76rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.episode-row-download-status.is-downloading {
+  color: #7c5b13;
+  background: #f2ecd6;
+}
+
+.episode-row-copy small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.episode-row-summary time {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.episode-row-action {
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 850;
+  text-align: right;
+}
+
+.episode-torrent-panel {
+  border-top: 1px solid var(--line);
+  padding: 14px;
+  background: rgba(239, 245, 242, 0.72);
+}
+
+.episode-torrent-table {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.episode-torrent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px 94px 66px 104px 104px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.episode-torrent-row.is-download-known {
+  color: rgba(23, 33, 29, 0.58);
+  background: rgba(226, 231, 228, 0.72);
+}
+
+.episode-torrent-row.is-download-known small {
+  color: rgba(87, 103, 96, 0.68);
+}
+
+.episode-download-button {
+  min-height: 38px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--accent);
+  background: transparent;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.episode-download-button:hover:not(:disabled),
+.episode-download-button:focus-visible:not(:disabled) {
+  color: #fff;
+  background: var(--accent);
+}
+
+.episode-download-button:disabled {
+  border-color: #c6ceca;
+  color: #77827d;
+  background: #e7ebe9;
+  cursor: not-allowed;
+}
+
+.episode-torrent-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.episode-torrent-row small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.episode-torrent-row strong {
+  overflow-wrap: anywhere;
+}
+
+.episode-torrent-head {
+  border: 0;
+  padding-top: 0;
+  padding-bottom: 3px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.episode-browser-status {
+  margin: 14px 0 0;
+  border-radius: 7px;
+  padding: 11px 12px;
+  color: var(--muted);
+  background: rgba(236, 241, 238, 0.8);
+}
+
+.episode-browser-status.is-warning {
+  color: #7c5b13;
+  background: #f2ecd6;
+}
+
+.episode-browser-status.is-error {
+  color: #93442f;
+  background: #f2dfdb;
+}
+
+@keyframes episode-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .badge.is-canceled {
   background: var(--rose);
 }
@@ -1779,6 +2210,24 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.episode-download-context {
+  display: grid;
+  gap: 3px;
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+}
+
+.episode-download-context strong {
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+
+.episode-download-context span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
 .add-dialog label {
   display: grid;
   gap: 6px;
@@ -1958,6 +2407,35 @@ h1 {
   .panel-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .episode-browser-heading,
+  .episode-torrent-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .episode-browser-controls,
+  .episode-browser-controls label {
+    width: 100%;
+  }
+
+  .episode-browser-controls select {
+    width: 100%;
+  }
+
+  .episode-row-summary,
+  .episode-torrent-row {
+    grid-template-columns: 1fr;
+  }
+
+  .episode-row-summary time,
+  .episode-row-action {
+    text-align: left;
+  }
+
+  .episode-torrent-head {
+    display: none;
   }
 
   .torrent-row {

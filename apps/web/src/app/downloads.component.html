@@ -80,7 +80,11 @@
             <h2>{{ download.name }}</h2>
             <p>{{ download.downloadDir }}</p>
             @if (download.releaseEventId) {
-              <a [routerLink]="modalRoute('release', download.releaseEventId)" queryParamsHandling="preserve">Release detail</a>
+              @if (isFavoriteEpisodeEventId(download.releaseEventId)) {
+                <a routerLink="/favorites">Favorite episode</a>
+              } @else {
+                <a [routerLink]="modalRoute('release', download.releaseEventId)" queryParamsHandling="preserve">Release detail</a>
+              }
             }
             @if (download.errorString) {
               <p class="download-error">{{ download.errorString }}</p>

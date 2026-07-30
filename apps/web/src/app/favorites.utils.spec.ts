@@ -17,6 +17,7 @@ const show = (input: Partial<FavoriteShowSummary> & Pick<FavoriteShowSummary, "s
   lastEpisode: null,
   nextEpisode: null,
   releaseContext: null,
+  preferredDownloadDir: null,
   fetchedAt: null,
   ...input,
 });

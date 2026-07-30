@@ -89,7 +89,7 @@ export function buildReleaseSections(
   hiddenShowKeys = new Set<string>(),
   favoriteOptions: TvFilterOptions = {},
 ): ReleaseSection[] {
-  const movies = filterLanguageVisibility(response?.movies ?? [], favoriteOptions);
+  const movies = response?.movies ?? [];
   const tvRows = filterLanguageVisibility(groupTvReleases(response?.tv ?? []), favoriteOptions);
   const tvWithProviders = filterSelectedProviders(tvRows, selectedProviderKeys);
   const tvWithoutHiddenShows = filterHiddenShows(tvWithProviders, hiddenShowKeys);

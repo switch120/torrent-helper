@@ -527,11 +527,17 @@ describe("release week utilities", () => {
     ]);
   });
 
-  it("hides international and dubbed releases unless language filters include them", () => {
+  it("keeps international movies visible while hiding international and dubbed TV unless language filters include them", () => {
     const domesticMovie = movieRelease({ eventId: "movie-domestic", title: "Domestic Movie" });
     const internationalMovie = movieRelease({
       eventId: "movie-international",
       title: "International Movie",
+      originalLanguage: "th",
+      isInternational: true,
+    });
+    const internationalShow = tvRelease({
+      eventId: "tv-international",
+      title: "International Show",
       originalLanguage: "th",
       isInternational: true,
     });
@@ -542,11 +548,12 @@ describe("release week utilities", () => {
     });
     const response = responseWith({
       movies: [domesticMovie, internationalMovie],
-      tv: [dubbedShow],
+      tv: [internationalShow, dubbedShow],
     });
 
     expect(buildReleaseSections(response, null)[0].releases.map((release) => release.title)).toEqual([
       "Domestic Movie",
+      "International Movie",
     ]);
     expect(buildReleaseSections(response, null)[1].releases).toEqual([]);
     expect(
@@ -554,7 +561,7 @@ describe("release week utilities", () => {
         showInternational: true,
         showDubbed: true,
       }).map((section) => section.releases.map((release) => release.title)),
-    ).toEqual([["Domestic Movie", "International Movie"], ["Dubbed Show"]]);
+    ).toEqual([["Domestic Movie", "International Movie"], ["International Show", "Dubbed Show"]]);
   });
 
   it("describes cache state quietly", () => {

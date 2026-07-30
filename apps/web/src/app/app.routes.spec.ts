@@ -6,6 +6,7 @@ describe("app routes", () => {
   it("keeps full-page routes and adds durable modal outlet routes", () => {
     const modalRoutes = routes.filter((route) => route.outlet === "modal").map((route) => route.path);
 
+    expect(routes.some((route) => route.path === "login" && !route.canActivate)).toBe(true);
     expect(routes.some((route) => route.path === "release/:eventId" && !route.outlet)).toBe(true);
     expect(routes.some((route) => route.path === "downloads" && !route.outlet)).toBe(true);
     expect(routes.some((route) => route.path === "favorites" && !route.outlet)).toBe(true);

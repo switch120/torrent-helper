@@ -2,6 +2,7 @@ import { CommonModule } from "@angular/common";
 import { Component, OnDestroy, OnInit, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { proxyStatusLabel, proxyToneClass } from "./downloads.utils";
+import { isFavoriteEpisodeEventId } from "./favorite-episode-event-id";
 import { ReleaseApiClient } from "./release-api.client";
 import type { ProxyHealth, TransmissionDownload } from "./release.models";
 import { modalRoute } from "./route-modal.utils";
@@ -30,6 +31,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   readonly proxyStatusLabel = proxyStatusLabel;
   readonly proxyToneClass = proxyToneClass;
   readonly modalRoute = modalRoute;
+  readonly isFavoriteEpisodeEventId = isFavoriteEpisodeEventId;
 
   ngOnInit(): void {
     void this.load(true);

@@ -1,76 +1,44 @@
+import { HttpErrorResponse } from "@angular/common/http";
 import { inject } from "@angular/core";
-import { AuthService } from "@auth0/auth0-angular";
 import { CanActivateFn, Router } from "@angular/router";
-import { combineLatest, firstValueFrom } from "rxjs";
-import { filter, take, timeout } from "rxjs/operators";
-import { googleLoginAuthorizationParams, isForbiddenAuthError, isUnauthorizedAuthError } from "./auth-routing.utils";
+import { firstValueFrom, from, timeout } from "rxjs";
+import { AuthSessionService } from "./auth-session.service";
 import { ReleaseApiClient } from "./release-api.client";
 
-const AUTH_STATE_TIMEOUT_MS = 8000;
-const PROFILE_TIMEOUT_MS = 10000;
+const authGuardTimeoutMs = 10_000;
 
 export const releaseHubAuthGuard: CanActivateFn = async (_route, state) => {
-  const auth = inject(AuthService);
+  const auth = inject(AuthSessionService);
   const api = inject(ReleaseApiClient);
   const router = inject(Router);
 
-  let authenticated: boolean;
-  try {
-    [, authenticated] = await firstValueFrom(
-      combineLatest([auth.isLoading$, auth.isAuthenticated$]).pipe(
-        filter(([loading]) => !loading),
-        take(1),
-        timeout(AUTH_STATE_TIMEOUT_MS),
-      ),
-    );
-  } catch {
-    await redirectToLogin(auth, state.url);
-    return false;
-  }
-
-  if (!authenticated) {
-    await redirectToLogin(auth, state.url);
-    return false;
+  if (!auth.hasStoredSession()) {
+    return router.createUrlTree(["/login"], {
+      queryParams: { returnUrl: state.url },
+    });
   }
 
   try {
-    await firstValueFrom(
-      auth.getAccessTokenSilently({ timeoutInSeconds: 8 }).pipe(
-        take(1),
-        timeout(PROFILE_TIMEOUT_MS),
-      ),
+    const token = await firstValueFrom(
+      auth.ensureAccessToken().pipe(timeout({ first: authGuardTimeoutMs })),
     );
-    await withTimeout(api.getProfile(), PROFILE_TIMEOUT_MS);
+    if (!token) throw new Error("No access token is available.");
+    const user = await firstValueFrom(
+      from(api.getProfile()).pipe(timeout({ first: authGuardTimeoutMs })),
+    );
+    auth.storeUserSnapshot(user);
     return true;
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      await redirectToLogin(auth, state.url);
-      return false;
-    }
-
-    if (isForbiddenAuthError(error)) {
-      return router.createUrlTree(["/access-denied"]);
-    }
-
-    await redirectToLogin(auth, state.url);
-    return false;
+    if (isTerminalAuthFailure(error)) auth.clearSession();
+    return router.createUrlTree(["/login"], {
+      queryParams: { returnUrl: state.url },
+    });
   }
 };
 
-function redirectToLogin(auth: AuthService, target: string): Promise<void> {
-  return firstValueFrom(
-    auth.loginWithRedirect({
-      appState: { target },
-      authorizationParams: googleLoginAuthorizationParams,
-    }),
+function isTerminalAuthFailure(error: unknown): boolean {
+  return (
+    (error instanceof HttpErrorResponse && error.status === 401) ||
+    (error instanceof Error && error.message === "No access token is available.")
   );
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_resolve, reject) => {
-      window.setTimeout(() => reject(new Error("Auth profile check timed out.")), timeoutMs);
-    }),
-  ]);
 }

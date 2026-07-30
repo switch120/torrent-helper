@@ -1,7 +1,9 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { PROWLARR_CLIENT, RELEASE_REPOSITORY, TMDB_CLIENT, TRANSMISSION_CLIENT } from "./release.tokens";
 import type { ReleaseRepository } from "./release.repository";
 import type { ReleaseDetail } from "./release-detail.types";
+import type { NormalizedRelease } from "./release.types";
 import { applyCastExternalIds, mapTmdbMovieDetail, mapTmdbTvDetail } from "./tmdb-detail.mapper";
 import type { TmdbClient } from "./tmdb.client";
 import type { ProwlarrClient } from "../torrents/prowlarr.client";
@@ -113,6 +115,15 @@ export class ReleaseWorkflowService {
     input: { magnetLink?: string; downloadDir?: string },
   ): Promise<AddDownloadResponse> {
     const release = await this.getRelease(eventId);
+    return this.addDownloadForRelease(userId, release, input);
+  }
+
+  async addDownloadForRelease(
+    userId: number,
+    release: NormalizedRelease,
+    input: { magnetLink?: string; downloadDir?: string },
+    options: { preventDuplicate?: boolean } = {},
+  ): Promise<AddDownloadResponse> {
     const magnetLink = input.magnetLink || "";
     if (!magnetLink.startsWith("magnet:")) {
       throw new BadRequestException("A magnet link is required.");
@@ -130,26 +141,55 @@ export class ReleaseWorkflowService {
     if (!duplicateRecord && (resolvedMagnetLink !== magnetLink || resolvedHash !== inputHash)) {
       duplicateRecord = await this.repository.findDownloadRecordByMagnet(userId, resolvedMagnetLink, resolvedHash);
     }
-    const added = await this.transmission.addMagnet(resolvedMagnetLink, downloadDir);
-    const historyRecord = await this.repository.saveDownloadRecord({
-      userId,
-      releaseEventId: eventId,
-      tmdbId: release.tmdbId,
-      title: release.title,
-      transmissionTorrentId: added.id,
-      torrentName: added.name,
-      magnetLink: resolvedMagnetLink,
-      magnetHash: added.hashString || resolvedHash,
-      downloadDir,
-      status: "pending",
-    });
+    let claimedMagnetKey: string | null = null;
+    if (options.preventDuplicate) {
+      const magnetKey = downloadClaimKey(resolvedMagnetLink, resolvedHash);
+      if (!(await this.repository.claimDownload(userId, magnetKey))) {
+        throw new ConflictException(
+          duplicateRecord
+            ? duplicateWarning(duplicateRecord.createdAt)
+            : "This torrent is already being downloaded.",
+        );
+      }
+      claimedMagnetKey = magnetKey;
+      if (duplicateRecord) {
+        throw new ConflictException(duplicateWarning(duplicateRecord.createdAt));
+      }
+    }
+    let added: Awaited<ReturnType<TransmissionRpcClient["addMagnet"]>>;
+    let historyRecord: Awaited<ReturnType<ReleaseRepository["saveDownloadRecord"]>>;
+    try {
+      added = await this.transmission.addMagnet(resolvedMagnetLink, downloadDir);
+      historyRecord = await this.repository.saveDownloadRecord({
+        userId,
+        releaseEventId: release.eventId,
+        tmdbId: release.tmdbId,
+        title: release.title,
+        transmissionTorrentId: added.id,
+        torrentName: added.name,
+        magnetLink: resolvedMagnetLink,
+        magnetHash: added.hashString || resolvedHash,
+        downloadDir,
+        status: "pending",
+      });
+    } catch (error) {
+      if (claimedMagnetKey) {
+        await this.repository.releaseDownloadClaim(userId, claimedMagnetKey);
+      }
+      throw error;
+    }
 
     const downloads = await this.listDownloads(userId);
+    const duplicate = Boolean(duplicateRecord || added.duplicate);
     return {
       download: downloads.find((download) => download.id === added.id) || null,
       historyRecord: this.toHistoryEntry(historyRecord, downloads.find((download) => download.id === added.id) || null),
-      duplicate: Boolean(duplicateRecord),
-      warning: duplicateRecord ? duplicateWarning(duplicateRecord.createdAt) : null,
+      duplicate,
+      warning: duplicateRecord
+        ? duplicateWarning(duplicateRecord.createdAt)
+        : added.duplicate
+          ? "Transmission already has this torrent."
+          : null,
     };
   }
 
@@ -272,6 +312,12 @@ export class ReleaseWorkflowService {
 function normalizeQuality(quality: string): TorrentSearchQuality {
   if (quality === "1080p" || quality === "2160p" || quality === "any") return quality;
   throw new BadRequestException("Quality must be 1080p, 2160p, or any.");
+}
+
+function downloadClaimKey(magnetLink: string, magnetHash: string | null): string {
+  return magnetHash
+    ? `hash:${magnetHash.toLowerCase()}`
+    : `link:${createHash("md5").update(magnetLink).digest("hex")}`;
 }
 
 function resolveHistoryStatus(

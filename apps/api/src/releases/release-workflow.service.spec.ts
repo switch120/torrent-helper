@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { DownloadRecordSnapshot, ReleaseRepository } from "./release.repository";
 import { ReleaseWorkflowService } from "./release-workflow.service";
@@ -115,6 +116,173 @@ describe("ReleaseWorkflowService torrent search", () => {
     expect(response.warning).toContain("already added");
   });
 
+  it("prevents a duplicate before sending it to Transmission when requested", async () => {
+    const magnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Episode";
+    const repository = createRepository({
+      findDownloadRecordByMagnet: vi.fn(async () =>
+        downloadRecord({ createdAt: new Date("2026-05-15T10:00:00.000Z") }),
+      ),
+    });
+    const transmission = {
+      addMagnet: vi.fn(),
+      getDownloads: vi.fn(async () => []),
+    };
+    const service = createService(repository, createProwlarr(), transmission);
+
+    await expect(
+      service.addDownloadForRelease(
+        7,
+        release({ eventId: "tmdb:100:s2:e3", title: "Example Show", mediaType: "tv" }),
+        { magnetLink, downloadDir: "/data/TV" },
+        { preventDuplicate: true },
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(transmission.addMagnet).not.toHaveBeenCalled();
+    expect(repository.saveDownloadRecord).not.toHaveBeenCalled();
+  });
+
+  it("atomically claims an episode torrent before concurrent Transmission adds", async () => {
+    const magnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Episode";
+    let claimed = false;
+    const repository = createRepository({
+      claimDownload: vi.fn(async () => {
+        if (claimed) return false;
+        claimed = true;
+        return true;
+      }),
+    });
+    const transmission = {
+      addMagnet: vi.fn(async () => ({
+        id: 44,
+        name: "Example Show S02E03",
+        hashString: "abcdef1234567890",
+        duplicate: false,
+      })),
+      getDownloads: vi.fn(async () => []),
+    };
+    const service = createService(repository, createProwlarr(), transmission);
+    const episode = release({
+      eventId: "tmdb:100:s2:e3",
+      title: "Example Show",
+      mediaType: "tv",
+    });
+
+    const attempts = await Promise.allSettled([
+      service.addDownloadForRelease(
+        7,
+        episode,
+        { magnetLink, downloadDir: "/data/TV" },
+        { preventDuplicate: true },
+      ),
+      service.addDownloadForRelease(
+        7,
+        episode,
+        { magnetLink, downloadDir: "/data/TV" },
+        { preventDuplicate: true },
+      ),
+    ]);
+
+    expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+    expect(
+      attempts.some(
+        (attempt) =>
+          attempt.status === "rejected" &&
+          attempt.reason instanceof ConflictException,
+      ),
+    ).toBe(true);
+    expect(repository.claimDownload).toHaveBeenCalledTimes(2);
+    expect(transmission.addMagnet).toHaveBeenCalledTimes(1);
+    expect(repository.saveDownloadRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the same canonical claim key for base32 and hexadecimal btih hashes", async () => {
+    const base32 = "CI2FM6EQCI2FM6EQCI2FM6EQCI2FM6EQ";
+    const hexadecimal = "1234567890123456789012345678901234567890";
+    const magnetLink = `magnet:?xt=urn:btih:${base32}&dn=Episode`;
+    const repository = createRepository();
+    const transmission = {
+      addMagnet: vi.fn(async () => ({
+        id: 44,
+        name: "Example Show S02E03",
+        hashString: hexadecimal,
+        duplicate: false,
+      })),
+      getDownloads: vi.fn(async () => []),
+    };
+    const service = createService(repository, createProwlarr(), transmission);
+
+    await service.addDownloadForRelease(
+      7,
+      release({
+        eventId: "tmdb:100:s2:e3",
+        title: "Example Show",
+        mediaType: "tv",
+      }),
+      { magnetLink, downloadDir: "/data/TV" },
+      { preventDuplicate: true },
+    );
+
+    expect(repository.claimDownload).toHaveBeenCalledWith(
+      7,
+      `hash:${hexadecimal}`,
+    );
+    expect(repository.saveDownloadRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ magnetHash: hexadecimal }),
+    );
+  });
+
+  it("releases an episode claim when Transmission rejects the add", async () => {
+    const magnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Episode";
+    const repository = createRepository();
+    const transmission = {
+      addMagnet: vi.fn(async () => {
+        throw new Error("Transmission unavailable");
+      }),
+      getDownloads: vi.fn(async () => []),
+    };
+    const service = createService(repository, createProwlarr(), transmission);
+
+    await expect(
+      service.addDownloadForRelease(
+        7,
+        release({ eventId: "tmdb:100:s2:e3", mediaType: "tv" }),
+        { magnetLink, downloadDir: "/data/TV" },
+        { preventDuplicate: true },
+      ),
+    ).rejects.toThrow("Transmission unavailable");
+
+    expect(repository.releaseDownloadClaim).toHaveBeenCalledWith(
+      7,
+      "hash:abcdef1234567890",
+    );
+  });
+
+  it("reports a duplicate returned directly by Transmission", async () => {
+    const magnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Episode";
+    const repository = createRepository();
+    const transmission = {
+      addMagnet: vi.fn(async () => ({
+        id: 44,
+        name: "Example Show S02E03",
+        hashString: "abcdef1234567890",
+        duplicate: true,
+      })),
+      getDownloads: vi.fn(async () => []),
+    };
+    const service = createService(repository, createProwlarr(), transmission);
+
+    const response = await service.addDownloadForRelease(
+      7,
+      release({ eventId: "tmdb:100:s2:e3", mediaType: "tv" }),
+      { magnetLink, downloadDir: "/data/TV" },
+      { preventDuplicate: true },
+    );
+
+    expect(response.duplicate).toBe(true);
+    expect(response.warning).toBe("Transmission already has this torrent.");
+  });
+
   it("lists download history with downloaded status derived from active Transmission progress", async () => {
     const repository = createRepository({
       getDownloadRecords: vi.fn(async () => [
@@ -175,6 +343,8 @@ function createRepository(overrides: Partial<ReleaseRepository> = {}): ReleaseRe
     getTorrentSearchCache: vi.fn(async () => null),
     saveTorrentSearchCache: vi.fn(async () => undefined),
     saveDownloadRecord: vi.fn(async () => downloadRecord()),
+    claimDownload: vi.fn(async () => true),
+    releaseDownloadClaim: vi.fn(async () => undefined),
     getDownloadRecords: vi.fn(async () => []),
     findDownloadRecordByMagnet: vi.fn(async () => null),
     markDownloadRecordsCompleted: vi.fn(async () => 0),

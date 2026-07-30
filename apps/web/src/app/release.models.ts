@@ -84,16 +84,9 @@ export type HiddenShowFilter = {
   episodeNumber?: number | null;
 };
 
-export type AuthPublicConfig = {
-  domain: string;
-  audience: string;
-  clientId: string;
-  configured: boolean;
-};
-
 export type AuthenticatedUser = {
   id: number;
-  auth0Sub: string;
+  username: string;
   email: string;
   name: string | null;
   pictureUrl: string | null;
@@ -264,5 +257,15 @@ export type FavoriteShowSummary = {
   lastEpisode: FavoriteEpisodeSummary | null;
   nextEpisode: FavoriteEpisodeSummary | null;
   releaseContext: FavoriteReleaseContext | null;
+  preferredDownloadDir: string | null;
   fetchedAt: string | null;
+};
+
+export type FavoriteSeasonDetail = {
+  showKey: string;
+  seasonNumber: number;
+  airDate: string | null;
+  overview: string | null;
+  posterUrl: string | null;
+  episodes: FavoriteEpisodeSummary[];
 };

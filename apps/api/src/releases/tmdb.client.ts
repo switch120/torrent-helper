@@ -137,10 +137,9 @@ type DigitalMovie = {
 
 type MovieProviderAvailability = {
   streamingProviders: ReleaseProviderSource[];
-  hasDigitalAvailability: boolean;
 };
 
-type TmdbMovieReleaseDateSource = "digital" | "new-release-fallback";
+type TmdbMovieReleaseDateSource = "digital";
 
 type TmdbMovieReleaseDateMatch = {
   date: string;
@@ -161,8 +160,7 @@ type TvShowDiscovery = {
 };
 
 const digitalReleaseType = 4;
-const newReleaseFallbackTypes = [2, 3];
-const tmdbDigitalDatePolicy = "original-us-digital-with-provider-backed-fallback-v2";
+const tmdbDigitalDatePolicy = "original-us-digital-only-v3";
 const featuredReleaseWindowDays = 548;
 const featuredVoteThreshold = 25;
 const featuredPopularityThreshold = 20;
@@ -219,15 +217,8 @@ export class TmdbClient {
     }
 
     const digitalDiscoverPages = await this.fetchDiscoverPages(input, digitalReleaseType);
-    const fallbackDiscoverGroups = await Promise.all(
-      newReleaseFallbackTypes.map((releaseType) => this.fetchDiscoverPages(input, releaseType)),
-    );
-    const fallbackDiscoverPages = fallbackDiscoverGroups.flat();
     const digitalMovieCandidates = digitalDiscoverPages.flatMap((page) => page.results || []);
-    const newReleaseCandidates = fallbackDiscoverPages
-      .flatMap((page) => page.results || [])
-      .filter((movie) => isDateInWindow(movie.release_date, input.weekStart, input.weekEnd));
-    const movies = uniqueMovies([...digitalMovieCandidates, ...newReleaseCandidates]);
+    const movies = uniqueMovies(digitalMovieCandidates);
     const digitalMovies: DigitalMovie[] = [];
 
     for (const movie of movies) {
@@ -236,17 +227,10 @@ export class TmdbClient {
         rawReleaseDates,
         input.weekStart,
         input.weekEnd,
-        movie.release_date || null,
       );
       if (!releaseDateMatch) continue;
 
       const providerAvailability = await this.fetchMovieProviderAvailability(movie.id);
-      if (
-        releaseDateMatch.source === "new-release-fallback" &&
-        !providerAvailability.hasDigitalAvailability
-      ) {
-        continue;
-      }
 
       digitalMovies.push({
         movie,
@@ -263,7 +247,6 @@ export class TmdbClient {
         digitalDatePolicy: tmdbDigitalDatePolicy,
         discover: {
           digital: digitalDiscoverPages,
-          newReleaseFallback: fallbackDiscoverPages,
         },
         releaseDates: digitalMovies.map((item) => item.rawReleaseDates),
       },
@@ -547,7 +530,7 @@ export class TmdbClient {
       posterUrl,
       releaseDate: item.releaseDate,
       sourceId: 0,
-      sourceName: item.releaseDateSource === "new-release-fallback" ? "New release" : "Digital release",
+      sourceName: "Digital release",
       sourceType: "digital",
       seasonNumber: null,
       isOriginal: false,
@@ -555,15 +538,13 @@ export class TmdbClient {
       popularity: item.movie.popularity ?? null,
       voteAverage: item.movie.vote_average ?? null,
       voteCount: item.movie.vote_count ?? null,
-      isFeaturedDigital:
-        item.releaseDateSource === "new-release-fallback" ||
-        isFeaturedDigitalMovie(
-          primaryReleaseDate,
-          item.movie.popularity ?? null,
-          item.movie.vote_count ?? null,
-          item.releaseDate,
-        ),
-      isDigitalDateFallback: item.releaseDateSource === "new-release-fallback",
+      isFeaturedDigital: isFeaturedDigitalMovie(
+        primaryReleaseDate,
+        item.movie.popularity ?? null,
+        item.movie.vote_count ?? null,
+        item.releaseDate,
+      ),
+      isDigitalDateFallback: false,
       originalLanguage,
       isInternational: isInternationalLanguage(originalLanguage),
       isDubbed: hasDubbedCue(item.movie.title, item.movie.original_title, item.movie.overview),
@@ -674,7 +655,6 @@ function normalizeMovieProviderAvailability(response: TmdbWatchProvidersResponse
   if (!usProviders) {
     return {
       streamingProviders: [],
-      hasDigitalAvailability: false,
     };
   }
 
@@ -684,18 +664,7 @@ function normalizeMovieProviderAvailability(response: TmdbWatchProvidersResponse
       ...(usProviders.free || []).map((provider) => providerSourceFromTmdbProvider(provider, "free")),
       ...(usProviders.ads || []).map((provider) => providerSourceFromTmdbProvider(provider, "free")),
     ]),
-    hasDigitalAvailability: hasMovieDigitalAvailability(usProviders),
   };
-}
-
-function hasMovieDigitalAvailability(usProviders: NonNullable<TmdbWatchProvidersResponse["results"]>["US"]): boolean {
-  return [
-    usProviders?.flatrate,
-    usProviders?.free,
-    usProviders?.ads,
-    usProviders?.rent,
-    usProviders?.buy,
-  ].some((providers) => Boolean(providers?.length));
 }
 
 function providerSourceFromTmdbProvider(
@@ -787,7 +756,6 @@ function findDigitalReleaseDate(
   response: TmdbReleaseDatesResponse,
   weekStart: string,
   weekEnd: string,
-  fallbackReleaseDate: string | null,
 ): TmdbMovieReleaseDateMatch | null {
   const usReleaseDates =
     response.results?.find((result) => result.iso_3166_1 === "US")?.release_dates || [];
@@ -803,23 +771,7 @@ function findDigitalReleaseDate(
     return { date: originalDigitalDate, source: "digital" };
   }
 
-  if (!isDateInWindow(fallbackReleaseDate, weekStart, weekEnd)) return null;
-
-  const originalFallbackDate = usReleaseDates
-    .filter((releaseDate) => newReleaseFallbackTypes.includes(releaseDate.type))
-    .map((releaseDate) => releaseDate.release_date.slice(0, 10))
-    .filter((releaseDate) => releaseDate >= weekStart && releaseDate <= weekEnd)
-    .sort()[0];
-
-  return originalFallbackDate
-    ? { date: originalFallbackDate, source: "new-release-fallback" }
-    : null;
-}
-
-function isDateInWindow(value: string | null | undefined, weekStart: string, weekEnd: string): boolean {
-  if (!value) return false;
-  const dateOnly = value.slice(0, 10);
-  return dateOnly >= weekStart && dateOnly <= weekEnd;
+  return null;
 }
 
 function shouldRetryTmdbResponse(status: number): boolean {

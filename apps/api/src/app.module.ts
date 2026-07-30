@@ -2,6 +2,8 @@ import { MiddlewareConsumer, Module, NestModule, RequestMethod } from "@nestjs/c
 import { ScheduleModule } from "@nestjs/schedule";
 import { AuthController } from "./auth/auth.controller";
 import { AuthMiddleware } from "./auth/auth.middleware";
+import { AuthSessionService } from "./auth/auth-session.service";
+import { PasswordService } from "./auth/password.service";
 import { DownloadsController } from "./downloads/downloads.controller";
 import { TorrentCleanupService } from "./downloads/torrent-cleanup.service";
 import { createTransmissionRpcClientFromEnv } from "./downloads/transmission-rpc.client";
@@ -25,6 +27,8 @@ import { UserSettingsService } from "./users/user-settings.service";
   providers: [
     PrismaService,
     AuthMiddleware,
+    AuthSessionService,
+    PasswordService,
     ReleasesService,
     ReleaseWorkflowService,
     TorrentCleanupService,

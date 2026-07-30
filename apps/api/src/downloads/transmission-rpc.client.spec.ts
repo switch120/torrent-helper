@@ -4,9 +4,11 @@ import { TransmissionRpcClient } from "./transmission-rpc.client";
 describe("TransmissionRpcClient", () => {
   it("adds a magnet link with the selected download directory", async () => {
     const requests: Array<Record<string, unknown>> = [];
+    const requestSignals: Array<AbortSignal | null | undefined> = [];
     const client = new TransmissionRpcClient({
       fetchImpl: async (_url, init) => {
         requests.push(JSON.parse(String(init.body)));
+        requestSignals.push(init.signal);
         return jsonResponse({
           result: "success",
           arguments: {
@@ -30,6 +32,7 @@ describe("TransmissionRpcClient", () => {
         labels: ["release-hub"],
       },
     });
+    expect(requestSignals[0]).toBeInstanceOf(AbortSignal);
     expect(result).toEqual({ id: 12, name: "Sample Film", hashString: "abc", duplicate: false });
   });
 
