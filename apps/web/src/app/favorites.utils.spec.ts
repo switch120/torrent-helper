@@ -109,4 +109,15 @@ describe("favorite show list utilities", () => {
       status: "Ended",
     }))).toBe("Ended");
   });
+
+  it("does not label a first-season show as returning when a later season is only announced", () => {
+    expect(favoriteSeriesStageLabel(show({
+      showKey: "announced-second-season",
+      title: "Announced Second Season",
+      currentSeasonNumber: 1,
+      numberOfSeasons: 2,
+      firstAirDate: "2026-08-16",
+      lastEpisode: { name: "Pilot", seasonNumber: 1, episodeNumber: 1, airDate: "2026-08-16" },
+    }), new Date("2026-08-17T12:00:00.000Z"))).toBe("New series");
+  });
 });

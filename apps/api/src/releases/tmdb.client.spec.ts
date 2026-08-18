@@ -918,6 +918,102 @@ describe("TmdbClient", () => {
     ]);
   });
 
+  it("checks every plausible undated season for current-week episodes", async () => {
+    const seasonCalls: string[] = [];
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      tvProviderGroups: [{ sourceId: 15, sourceName: "Hulu", providerIds: [15] }],
+      fetchImpl: async (url) => {
+        if (url.includes("/discover/tv")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: [{ id: 501, name: "Undated Seasons", first_air_date: "2025-01-01" }],
+            }),
+          );
+        }
+
+        if (url.includes("/season/")) {
+          seasonCalls.push(url);
+          const seasonNumber = Number(url.match(/\/season\/(\d+)/)?.[1]);
+          return new Response(
+            JSON.stringify({
+              season_number: seasonNumber,
+              episodes: seasonNumber === 1
+                ? [{ air_date: "2026-05-16", season_number: 1, episode_number: 10 }]
+                : [],
+            }),
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 501,
+            name: "Undated Seasons",
+            first_air_date: "2025-01-01",
+            networks: [{ id: 453, name: "Hulu" }],
+            seasons: [
+              { season_number: 1, air_date: null, episode_count: 10 },
+              { season_number: 2, air_date: null, episode_count: 8 },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getTvAirings({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(seasonCalls).toHaveLength(2);
+    expect(result.releases).toEqual([
+      expect.objectContaining({ title: "Undated Seasons", seasonNumber: 1, episodeNumber: 10 }),
+    ]);
+  });
+
+  it("caps concurrent discovery requests across provider, network, and page batches", async () => {
+    let activeDiscoverRequests = 0;
+    let maxActiveDiscoverRequests = 0;
+    let discoverCalls = 0;
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      maxConcurrentRequests: 2,
+      tvProviderGroups: [
+        { sourceId: 15, sourceName: "Hulu", providerIds: [15], networkIds: [453] },
+        { sourceId: 9, sourceName: "Prime Video", providerIds: [9], networkIds: [1024] },
+        { sourceId: 337, sourceName: "Disney+", providerIds: [337], networkIds: [2739] },
+      ],
+      fetchImpl: async (url) => {
+        if (!url.includes("/discover/tv")) {
+          throw new Error(`Unexpected TMDB request: ${url}`);
+        }
+
+        activeDiscoverRequests += 1;
+        discoverCalls += 1;
+        maxActiveDiscoverRequests = Math.max(maxActiveDiscoverRequests, activeDiscoverRequests);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        activeDiscoverRequests -= 1;
+        return new Response(
+          JSON.stringify({
+            page: Number(new URL(url).searchParams.get("page")),
+            total_pages: 2,
+            results: [],
+          }),
+        );
+      },
+    });
+
+    await client.getTvAirings({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(discoverCalls).toBe(12);
+    expect(maxActiveDiscoverRequests).toBe(2);
+  });
+
   it("starts provider discovery together and hydrates duplicate TV shows once", async () => {
     const calls: string[] = [];
     const pendingDiscover = new Map<string, (response: Response) => void>();

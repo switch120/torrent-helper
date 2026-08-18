@@ -40,12 +40,12 @@ export function favoriteSeriesStageLabel(
   show: FavoriteShowSummary,
   now: Date = new Date(),
 ): "New series" | "First season" | "Returning" | null {
-  const seasonNumber = Math.max(
+  const observedSeasonNumber = Math.max(
     show.currentSeasonNumber ?? 0,
-    show.numberOfSeasons ?? 0,
     show.lastEpisode?.seasonNumber ?? 0,
     show.nextEpisode?.seasonNumber ?? 0,
   );
+  const seasonNumber = observedSeasonNumber || show.numberOfSeasons || 0;
   if (seasonNumber > 1) return "Returning";
   if (seasonNumber !== 1) return null;
 

@@ -280,25 +280,44 @@ export class TmdbClient {
     }> = [];
     const airings: TvEpisodeAiring[] = [];
 
-    const discoverResults = await mapWithConcurrency(
-      this.tvProviderGroups,
+    const discoveryBatches: Array<{
+      provider: TmdbTvProviderGroup;
+      strategy: TvDiscoveryStrategy;
+    }> = this.tvProviderGroups.flatMap((provider) => [
+      { provider, strategy: "provider" as const },
+      ...(provider.networkIds?.length
+        ? [{ provider, strategy: "network" as const }]
+        : []),
+    ]);
+    const firstPages = await mapWithConcurrency(
+      discoveryBatches,
       this.maxConcurrentRequests,
-      async (provider) => {
-        const [providerPages, networkPages] = await Promise.all([
-          this.fetchTvDiscoverPages(input, provider, "provider"),
-          provider.networkIds?.length
-            ? this.fetchTvDiscoverPages(input, provider, "network")
-            : Promise.resolve([]),
-        ]);
-        return [
-          { provider, strategy: "provider" as const, pages: providerPages },
-          ...(networkPages.length
-            ? [{ provider, strategy: "network" as const, pages: networkPages }]
-            : []),
-        ];
+      ({ provider, strategy }) => this.fetchTvDiscoverPage(input, provider, strategy, 1),
+    );
+    const remainingPageRequests = firstPages.flatMap((firstPage, batchIndex) => {
+      const totalPages = Math.min(firstPage.total_pages || 1, this.maxTvPages);
+      return Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => ({
+        batchIndex,
+        page: index + 2,
+      }));
+    });
+    const remainingPages = await mapWithConcurrency(
+      remainingPageRequests,
+      this.maxConcurrentRequests,
+      ({ batchIndex, page }) => {
+        const { provider, strategy } = discoveryBatches[batchIndex];
+        return this.fetchTvDiscoverPage(input, provider, strategy, page);
       },
     );
-    rawDiscover.push(...discoverResults.flat());
+    const pagesByBatch = firstPages.map((firstPage) => [firstPage]);
+    remainingPageRequests.forEach(({ batchIndex }, index) => {
+      pagesByBatch[batchIndex].push(remainingPages[index]);
+    });
+    rawDiscover.push(...discoveryBatches.map(({ provider, strategy }, batchIndex) => ({
+      provider,
+      strategy,
+      pages: pagesByBatch[batchIndex],
+    })));
 
     const discoveredShows = uniqueTvShowDiscoveries(
       rawDiscover.flatMap(({ provider, pages }) =>
@@ -353,25 +372,6 @@ export class TmdbClient {
       remainingPages,
       this.maxConcurrentRequests,
       (page) => this.fetchDiscoverPage(input, releaseType, page),
-    ));
-
-    return pages;
-  }
-
-  private async fetchTvDiscoverPages(
-    input: { weekStart: string; weekEnd: string },
-    provider: TmdbTvProviderGroup,
-    strategy: TvDiscoveryStrategy,
-  ): Promise<TmdbTvDiscoverResponse[]> {
-    const firstPage = await this.fetchTvDiscoverPage(input, provider, strategy, 1);
-    const pages = [firstPage];
-    const totalPages = Math.min(firstPage.total_pages || 1, this.maxTvPages);
-
-    const remainingPages = Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => index + 2);
-    pages.push(...await mapWithConcurrency(
-      remainingPages,
-      this.maxConcurrentRequests,
-      (page) => this.fetchTvDiscoverPage(input, provider, strategy, page),
     ));
 
     return pages;
@@ -810,10 +810,7 @@ function selectPotentialAiringSeasons(
   const activeSeasons = dated
     .filter((season) => (season.air_date || "") <= weekEnd)
     .slice(0, 2);
-  const fallbackSeason = undated[0];
-
-  return [...activeSeasons, fallbackSeason]
-    .filter((season): season is TmdbSeasonSummary => Boolean(season))
+  return [...activeSeasons, ...undated]
     .filter((season, index, selected) =>
       selected.findIndex((candidate) => candidate.season_number === season.season_number) === index,
     )
