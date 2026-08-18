@@ -693,9 +693,325 @@ describe("TmdbClient", () => {
         originalLanguage: "en",
         isInternational: false,
         isDubbed: false,
+        sources: [
+          {
+            key: "provider:appletv",
+            name: "Apple TV+",
+            releaseSource: "tmdb",
+            sourceId: 350,
+            sourceType: "sub",
+          },
+          {
+            key: "provider:primevideo",
+            name: "Prime Video",
+            releaseSource: "tmdb",
+            sourceId: 9,
+            sourceType: "sub",
+          },
+        ],
       }),
     ]);
     expect(result.releases).toHaveLength(1);
+  });
+
+  it("finds network-scheduled shows when TMDB has no US provider row", async () => {
+    const calls: string[] = [];
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      tvProviderGroups: [
+        {
+          sourceId: 1899,
+          sourceName: "Max",
+          providerIds: [1899, 1825],
+          networkIds: [49],
+        },
+      ],
+      fetchImpl: async (url) => {
+        calls.push(url);
+
+        if (url.includes("/discover/tv")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: url.includes("with_networks=49")
+                ? [
+                    {
+                      id: 95350,
+                      name: "Lanterns",
+                      original_name: "Lanterns",
+                      poster_path: "/lanterns.jpg",
+                      first_air_date: "2026-08-16",
+                      original_language: "en",
+                      popularity: 200,
+                      vote_average: 8.4,
+                      vote_count: 500,
+                    },
+                  ]
+                : [],
+            }),
+          );
+        }
+
+        if (url.includes("/3/tv/95350/season/1")) {
+          return new Response(
+            JSON.stringify({
+              season_number: 1,
+              episodes: [
+                {
+                  name: "Pilot",
+                  air_date: "2026-08-16",
+                  season_number: 1,
+                  episode_number: 1,
+                },
+              ],
+            }),
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 95350,
+            name: "Lanterns",
+            first_air_date: "2026-08-16",
+            original_language: "en",
+            external_ids: { imdb_id: "tt31186205" },
+            networks: [{ id: 49, name: "HBO" }],
+            seasons: [{ season_number: 1, air_date: "2026-08-16", episode_count: 8 }],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getTvAirings({
+      weekStart: "2026-08-10",
+      weekEnd: "2026-08-16",
+    });
+
+    expect(calls.some((url) => url.includes("with_watch_providers=1899%7C1825"))).toBe(true);
+    expect(calls.some((url) => url.includes("with_networks=49"))).toBe(true);
+    expect(result.releases).toEqual([
+      expect.objectContaining({
+        eventId: "tmdb:tv:95350:2026-08-16:1:1",
+        title: "Lanterns",
+        sourceId: 49,
+        sourceName: "HBO",
+        sources: [
+          {
+            key: "provider:max",
+            name: "Max",
+            releaseSource: "tmdb",
+            sourceId: 1899,
+            sourceType: "sub",
+          },
+        ],
+      }),
+    ]);
+    expect(result.raw).toEqual(
+      expect.objectContaining({
+        sourcingPolicy: "us-provider-network-v2",
+      }),
+    );
+  });
+
+  it("discovers TV results beyond the old three-page cap", async () => {
+    const calls: string[] = [];
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      tvProviderGroups: [{ sourceId: 15, sourceName: "Hulu", providerIds: [15] }],
+      fetchImpl: async (url) => {
+        calls.push(url);
+
+        if (url.includes("/discover/tv")) {
+          const page = new URL(url).searchParams.get("page");
+          return new Response(
+            JSON.stringify({
+              page: Number(page),
+              total_pages: 4,
+              results: page === "4"
+                ? [{ id: 400, name: "Page Four Show", first_air_date: "2026-05-16" }]
+                : [],
+            }),
+          );
+        }
+
+        if (url.includes("/3/tv/400/season/1")) {
+          return new Response(
+            JSON.stringify({
+              season_number: 1,
+              episodes: [{ air_date: "2026-05-16", season_number: 1, episode_number: 2 }],
+            }),
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 400,
+            name: "Page Four Show",
+            first_air_date: "2026-05-01",
+            networks: [{ id: 453, name: "Hulu" }],
+            seasons: [{ season_number: 1, air_date: "2026-05-01", episode_count: 8 }],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getTvAirings({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(calls.some((url) => new URL(url).searchParams.get("page") === "4")).toBe(true);
+    expect(result.releases.map((release) => release.title)).toEqual(["Page Four Show"]);
+  });
+
+  it("checks the two most recent dated seasons for overlapping schedules", async () => {
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      tvProviderGroups: [{ sourceId: 15, sourceName: "Hulu", providerIds: [15] }],
+      fetchImpl: async (url) => {
+        if (url.includes("/discover/tv")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: [{ id: 500, name: "Overlap Show", first_air_date: "2025-01-01" }],
+            }),
+          );
+        }
+
+        if (url.includes("/season/1")) {
+          return new Response(
+            JSON.stringify({
+              season_number: 1,
+              episodes: [{ air_date: "2026-05-16", season_number: 1, episode_number: 10 }],
+            }),
+          );
+        }
+
+        if (url.includes("/season/2")) {
+          return new Response(JSON.stringify({ season_number: 2, episodes: [] }));
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 500,
+            name: "Overlap Show",
+            first_air_date: "2025-01-01",
+            networks: [{ id: 453, name: "Hulu" }],
+            seasons: [
+              { season_number: 1, air_date: "2026-01-01", episode_count: 10 },
+              { season_number: 2, air_date: "2026-05-10", episode_count: 8 },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getTvAirings({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(result.releases).toEqual([
+      expect.objectContaining({ title: "Overlap Show", seasonNumber: 1, episodeNumber: 10 }),
+    ]);
+  });
+
+  it("checks every plausible undated season for current-week episodes", async () => {
+    const seasonCalls: string[] = [];
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      tvProviderGroups: [{ sourceId: 15, sourceName: "Hulu", providerIds: [15] }],
+      fetchImpl: async (url) => {
+        if (url.includes("/discover/tv")) {
+          return new Response(
+            JSON.stringify({
+              page: 1,
+              total_pages: 1,
+              results: [{ id: 501, name: "Undated Seasons", first_air_date: "2025-01-01" }],
+            }),
+          );
+        }
+
+        if (url.includes("/season/")) {
+          seasonCalls.push(url);
+          const seasonNumber = Number(url.match(/\/season\/(\d+)/)?.[1]);
+          return new Response(
+            JSON.stringify({
+              season_number: seasonNumber,
+              episodes: seasonNumber === 1
+                ? [{ air_date: "2026-05-16", season_number: 1, episode_number: 10 }]
+                : [],
+            }),
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            id: 501,
+            name: "Undated Seasons",
+            first_air_date: "2025-01-01",
+            networks: [{ id: 453, name: "Hulu" }],
+            seasons: [
+              { season_number: 1, air_date: null, episode_count: 10 },
+              { season_number: 2, air_date: null, episode_count: 8 },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await client.getTvAirings({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(seasonCalls).toHaveLength(2);
+    expect(result.releases).toEqual([
+      expect.objectContaining({ title: "Undated Seasons", seasonNumber: 1, episodeNumber: 10 }),
+    ]);
+  });
+
+  it("caps concurrent discovery requests across provider, network, and page batches", async () => {
+    let activeDiscoverRequests = 0;
+    let maxActiveDiscoverRequests = 0;
+    let discoverCalls = 0;
+    const client = new TmdbClient({
+      apiKey: "tmdb-key",
+      maxConcurrentRequests: 2,
+      tvProviderGroups: [
+        { sourceId: 15, sourceName: "Hulu", providerIds: [15], networkIds: [453] },
+        { sourceId: 9, sourceName: "Prime Video", providerIds: [9], networkIds: [1024] },
+        { sourceId: 337, sourceName: "Disney+", providerIds: [337], networkIds: [2739] },
+      ],
+      fetchImpl: async (url) => {
+        if (!url.includes("/discover/tv")) {
+          throw new Error(`Unexpected TMDB request: ${url}`);
+        }
+
+        activeDiscoverRequests += 1;
+        discoverCalls += 1;
+        maxActiveDiscoverRequests = Math.max(maxActiveDiscoverRequests, activeDiscoverRequests);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        activeDiscoverRequests -= 1;
+        return new Response(
+          JSON.stringify({
+            page: Number(new URL(url).searchParams.get("page")),
+            total_pages: 2,
+            results: [],
+          }),
+        );
+      },
+    });
+
+    await client.getTvAirings({
+      weekStart: "2026-05-11",
+      weekEnd: "2026-05-17",
+    });
+
+    expect(discoverCalls).toBe(12);
+    expect(maxActiveDiscoverRequests).toBe(2);
   });
 
   it("starts provider discovery together and hydrates duplicate TV shows once", async () => {

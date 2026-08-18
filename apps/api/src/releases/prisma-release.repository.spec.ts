@@ -283,4 +283,86 @@ describe("PrismaReleaseRepository", () => {
       }),
     );
   });
+
+  it("invalidates TV cache rows written before provider and network discovery", async () => {
+    const prisma = {
+      tmdbTvWeekCache: {
+        findUnique: vi.fn(async () => ({
+          weekStart: new Date("2026-08-10T00:00:00.000Z"),
+          weekEnd: new Date("2026-08-16T00:00:00.000Z"),
+          fetchedAt: new Date("2026-08-17T12:00:00.000Z"),
+          status: "fresh",
+          warning: null,
+          rawResponse: { discover: [] },
+        })),
+      },
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.getTmdbTvWeekCache("2026-08-10")).resolves.toBeNull();
+  });
+
+  it("accepts current TV cache rows and restores provider sources from airing raw data", async () => {
+    const prisma = {
+      tmdbTvWeekCache: {
+        findUnique: vi.fn(async () => ({
+          weekStart: new Date("2026-08-10T00:00:00.000Z"),
+          weekEnd: new Date("2026-08-16T00:00:00.000Z"),
+          fetchedAt: new Date("2026-08-17T12:00:00.000Z"),
+          status: "fresh",
+          warning: null,
+          rawResponse: { sourcingPolicy: "us-provider-network-v2" },
+        })),
+      },
+      tmdbTvAiring: {
+        count: vi.fn(async () => 0),
+        findMany: vi.fn(async () => [
+          {
+            eventId: "tmdb:tv:95350:2026-08-16:1:1",
+            tmdbId: 95350,
+            title: "Lanterns",
+            titleType: "tv_series",
+            posterUrl: null,
+            releaseDate: new Date("2026-08-16T00:00:00.000Z"),
+            firstAirDate: new Date("2026-08-16T00:00:00.000Z"),
+            providerId: 49,
+            providerName: "HBO",
+            seasonNumber: 1,
+            episodeNumber: 1,
+            episodeName: "Pilot",
+            imdbId: "tt31186205",
+            popularity: 200,
+            voteAverage: 8.4,
+            voteCount: 500,
+            originalLanguage: "en",
+            isInternational: false,
+            isDubbed: false,
+            raw: {
+              sources: [
+                {
+                  key: "provider:max",
+                  name: "Max",
+                  releaseSource: "tmdb",
+                  sourceId: 1899,
+                  sourceType: "sub",
+                },
+              ],
+            },
+          },
+        ]),
+      },
+    };
+    const repository = new PrismaReleaseRepository(prisma as never);
+
+    await expect(repository.getTmdbTvWeekCache("2026-08-10")).resolves.toEqual(
+      expect.objectContaining({ weekStart: "2026-08-10", status: "fresh" }),
+    );
+    await expect(repository.getTmdbTvAirings("2026-08-10", "2026-08-16")).resolves.toEqual([
+      expect.objectContaining({
+        title: "Lanterns",
+        sourceName: "HBO",
+        sources: [expect.objectContaining({ name: "Max", sourceId: 1899 })],
+      }),
+    ]);
+  });
 });

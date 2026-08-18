@@ -15,6 +15,7 @@ import type { ReleaseDetail } from "./release-detail.types";
 import type { TorrentResult, TorrentSearchQuality } from "../torrents/torrent.types";
 
 const tmdbDigitalDatePolicy = "original-us-digital-only-v3";
+const tmdbTvSourcingPolicy = "us-provider-network-v2";
 const downloadClaimStaleMs = 10 * 60 * 1000;
 
 @Injectable()
@@ -134,10 +135,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         },
       });
 
-      for (const release of input.releases) {
-        await tx.tmdbDigitalMovie.upsert({
-          where: { eventId: release.eventId },
-          create: {
+      if (input.releases.length > 0) {
+        await tx.tmdbDigitalMovie.createMany({
+          data: input.releases.map((release) => ({
             eventId: release.eventId,
             tmdbId: release.tmdbId || release.sourceTitleId,
             title: release.title,
@@ -152,22 +152,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
             isInternational: release.isInternational === true,
             isDubbed: release.isDubbed === true,
             raw: release as Prisma.InputJsonValue,
-          },
-          update: {
-            tmdbId: release.tmdbId || release.sourceTitleId,
-            title: release.title,
-            posterUrl: release.posterUrl,
-            releaseDate: toDate(release.releaseDate),
-            primaryReleaseDate: release.primaryReleaseDate ? toDate(release.primaryReleaseDate) : null,
-            popularity: release.popularity,
-            voteAverage: release.voteAverage,
-            voteCount: release.voteCount,
-            isFeaturedDigital: Boolean(release.isFeaturedDigital),
-            originalLanguage: release.originalLanguage,
-            isInternational: release.isInternational === true,
-            isDubbed: release.isDubbed === true,
-            raw: release as Prisma.InputJsonValue,
-          },
+          })),
         });
       }
     });
@@ -181,6 +166,8 @@ export class PrismaReleaseRepository implements ReleaseRepository {
     });
 
     if (!cache) return null;
+    const rawCache = isRecord(cache.rawResponse) ? cache.rawResponse : {};
+    if (rawCache.sourcingPolicy !== tmdbTvSourcingPolicy) return null;
     const missingLanguageCount = await this.prisma.tmdbTvAiring.count({
       where: {
         releaseDate: {
@@ -250,10 +237,9 @@ export class PrismaReleaseRepository implements ReleaseRepository {
         },
       });
 
-      for (const release of input.releases) {
-        await tx.tmdbTvAiring.upsert({
-          where: { eventId: release.eventId },
-          create: {
+      if (input.releases.length > 0) {
+        await tx.tmdbTvAiring.createMany({
+          data: input.releases.map((release) => ({
             eventId: release.eventId,
             tmdbId: release.tmdbId || release.sourceTitleId,
             title: release.title,
@@ -274,28 +260,7 @@ export class PrismaReleaseRepository implements ReleaseRepository {
             isInternational: release.isInternational === true,
             isDubbed: release.isDubbed === true,
             raw: release as Prisma.InputJsonValue,
-          },
-          update: {
-            tmdbId: release.tmdbId || release.sourceTitleId,
-            title: release.title,
-            titleType: release.titleType,
-            posterUrl: release.posterUrl,
-            releaseDate: toDate(release.releaseDate),
-            firstAirDate: release.primaryReleaseDate ? toDate(release.primaryReleaseDate) : null,
-            providerId: release.sourceId,
-            providerName: release.sourceName,
-            seasonNumber: release.seasonNumber,
-            episodeNumber: release.episodeNumber,
-            episodeName: release.episodeName,
-            imdbId: release.imdbId,
-            popularity: release.popularity,
-            voteAverage: release.voteAverage,
-            voteCount: release.voteCount,
-            originalLanguage: release.originalLanguage,
-            isInternational: release.isInternational === true,
-            isDubbed: release.isDubbed === true,
-            raw: release as Prisma.InputJsonValue,
-          },
+          })),
         });
       }
     });
@@ -647,6 +612,7 @@ function mapTmdbTvAiring(airing: {
   isDubbed: boolean;
   raw: unknown;
 }): NormalizedRelease {
+  const raw = isRecord(airing.raw) ? airing.raw : {};
   return {
     eventId: airing.eventId,
     sourceTitleId: airing.tmdbId,
@@ -674,6 +640,7 @@ function mapTmdbTvAiring(airing: {
     originalLanguage: airing.originalLanguage,
     isInternational: airing.isInternational,
     isDubbed: airing.isDubbed,
+    sources: normalizeReleaseSources(raw.sources),
   };
 }
 

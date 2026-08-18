@@ -350,7 +350,7 @@ function torrentQualityRank(quality: TorrentResult["quality"]): number {
   return { "2160p": 4, "1080p": 3, "720p": 2, "480p": 1, unknown: 0 }[quality];
 }
 
-type FavoriteSnapshot = Omit<FavoriteShowSummary, "fetchedAt" | "preferredDownloadDir"> & {
+type FavoriteSnapshot = Omit<FavoriteShowSummary, "fetchedAt" | "preferredDownloadDir" | "firstAirDate"> & {
   raw: unknown;
   fetchedAt: Date;
 };
@@ -396,6 +396,7 @@ function mapFavoriteShow(record: {
   currentSeasonNumber: number | null;
   numberOfSeasons: number | null;
   numberOfEpisodes: number | null;
+  raw?: unknown;
   lastAirDate: Date | null;
   lastEpisode: unknown;
   nextEpisode: unknown;
@@ -416,6 +417,7 @@ function mapFavoriteShow(record: {
     currentSeasonNumber: record.currentSeasonNumber,
     numberOfSeasons: record.numberOfSeasons,
     numberOfEpisodes: record.numberOfEpisodes,
+    firstAirDate: tmdbDateFromRaw(record.raw, "first_air_date"),
     lastAirDate: record.lastAirDate ? toDateOnly(record.lastAirDate) : null,
     lastEpisode: mapStoredEpisode(record.lastEpisode),
     nextEpisode: mapStoredEpisode(record.nextEpisode),
@@ -467,6 +469,12 @@ function imageUrl(path: string | null | undefined, baseUrl: string): string | nu
 
 function toDateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function tmdbDateFromRaw(value: unknown, key: string): string | null {
+  if (!isRecord(value)) return null;
+  const date = value[key];
+  return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

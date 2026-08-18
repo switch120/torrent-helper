@@ -84,8 +84,11 @@
                 </button>
               </div>
               <div class="source-line">
-                @if (show.status) {
-                  <span class="badge" [class.is-canceled]="show.isCanceled">{{ show.status }}</span>
+                @if (favoriteLifecycleLabel(show); as lifecycleLabel) {
+                  <span class="badge" [class.is-canceled]="show.isCanceled">{{ lifecycleLabel }}</span>
+                }
+                @if (favoriteSeriesStageLabel(show); as seriesStageLabel) {
+                  <span class="badge">{{ seriesStageLabel }}</span>
                 }
                 @if (show.currentSeasonNumber) {
                   <span>Season {{ show.currentSeasonNumber }}</span>

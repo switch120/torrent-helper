@@ -469,6 +469,45 @@ describe("release week utilities", () => {
     expect(sections[1].hiddenCount).toBe(0);
   });
 
+  it("places favorite shows first alphabetically while preserving the order of other shows", () => {
+    const firstOther = tvRelease({
+      eventId: "first-other",
+      title: "First Other",
+      tmdbId: 100,
+    });
+    const zetaFavorite = tvRelease({
+      eventId: "zeta-favorite",
+      title: "Zeta Favorite",
+      tmdbId: 101,
+    });
+    const secondOther = tvRelease({
+      eventId: "second-other",
+      title: "Second Other",
+      tmdbId: 102,
+    });
+    const alphaFavorite = tvRelease({
+      eventId: "alpha-favorite",
+      title: "alpha Favorite",
+      tmdbId: 103,
+    });
+
+    const sections = buildReleaseSections(
+      responseWith({ tv: [firstOther, zetaFavorite, secondOther, alphaFavorite] }),
+      null,
+      new Set(),
+      {
+        favoriteShowKeys: new Set([showKey(zetaFavorite), showKey(alphaFavorite)]),
+      },
+    );
+
+    expect(sections[1].releases.map((release) => release.title)).toEqual([
+      "alpha Favorite",
+      "Zeta Favorite",
+      "First Other",
+      "Second Other",
+    ]);
+  });
+
   it("filters provider-backed TV to the selected provider allow-list", () => {
     const netflixMovie = {
       eventId: "movie-netflix",
@@ -525,6 +564,33 @@ describe("release week utilities", () => {
       { title: "Movies", count: 1, hiddenCount: 0, emptyText: "No movie releases cached for this week.", releases: [netflixMovie] },
       { title: "TV", count: 1, hiddenCount: 0, emptyText: "No TV releases cached for this week.", releases: [huluShow] },
     ]);
+  });
+
+  it("keeps a network-discovered show visible through its streaming provider", () => {
+    const lanterns = tvRelease({
+      eventId: "tmdb:tv:95350:2026-08-16:1:1",
+      title: "Lanterns",
+      tmdbId: 95350,
+      releaseDate: "2026-08-16",
+      sourceId: 49,
+      sourceName: "HBO",
+      sources: [
+        {
+          key: "provider:max",
+          name: "Max",
+          sourceId: 1899,
+          sourceType: "sub",
+          releaseSource: "tmdb",
+        },
+      ],
+    });
+
+    const sections = buildReleaseSections(
+      responseWith({ weekStart: "2026-08-10", weekEnd: "2026-08-16", tv: [lanterns] }),
+      new Set([providerKeyFromName("Max")]),
+    );
+
+    expect(sections[1].releases.map((release) => release.title)).toEqual(["Lanterns"]);
   });
 
   it("keeps international movies visible while hiding international and dubbed TV unless language filters include them", () => {

@@ -253,6 +253,7 @@ export type FavoriteShowSummary = {
   currentSeasonNumber: number | null;
   numberOfSeasons: number | null;
   numberOfEpisodes: number | null;
+  firstAirDate: string | null;
   lastAirDate: string | null;
   lastEpisode: FavoriteEpisodeSummary | null;
   nextEpisode: FavoriteEpisodeSummary | null;

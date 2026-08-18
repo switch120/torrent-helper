@@ -80,6 +80,38 @@ describe("ReleasesService", () => {
     expect(result.tv.map((item) => item.title)).toEqual(["Streaming Show"]);
   });
 
+  it("refreshes movie and TV sources concurrently", async () => {
+    let releaseRefreshes: (() => void) | undefined;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefreshes = resolve;
+    });
+    let movieStarted = false;
+    let tvStarted = false;
+    const repository = createRepository();
+    const tmdb = createTmdb({
+      getDigitalMovieReleases: async () => {
+        movieStarted = true;
+        await refreshGate;
+        return { releases: [], raw: {} };
+      },
+      getTvAirings: async () => {
+        tvStarted = true;
+        await refreshGate;
+        return { releases: [], raw: { sourcingPolicy: "us-provider-network-v2" } };
+      },
+    });
+    const service = new ReleasesService(repository, tmdb, () => new Date("2026-05-16T12:00:00.000Z"));
+
+    const resultPromise = service.refreshWeek("2026-05-11");
+    for (let attempt = 0; attempt < 10 && (!movieStarted || !tvStarted); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect({ movieStarted, tvStarted }).toEqual({ movieStarted: true, tvStarted: true });
+    releaseRefreshes?.();
+    await resultPromise;
+  });
+
   it("merges DVDsReleaseDates digital rows after resolving their IMDb ids through TMDB", async () => {
     const repository = createRepository({
       movies: [
@@ -311,6 +343,8 @@ function createRepository(overrides: Partial<{
     findDownloadRecordByMagnet: vi.fn(),
     markDownloadRecordsCompleted: vi.fn(),
     deleteDownloadRecord: vi.fn(),
+    claimDownload: vi.fn(),
+    releaseDownloadClaim: vi.fn(),
   };
 }
 
