@@ -49,6 +49,12 @@ describeIfDatabase("PrismaReleaseRepository integration", () => {
           sourceType: "digital" as const,
           seasonNumber: null,
           isOriginal: false,
+          popularity: 80.5,
+          voteAverage: 7.8,
+          voteCount: 120,
+          originalLanguage: "en",
+          isInternational: false,
+          isDubbed: false,
         },
       ],
     };
@@ -84,7 +90,10 @@ describeIfDatabase("PrismaReleaseRepository integration", () => {
       weekEnd: "2026-05-17",
       fetchedAt: new Date("2026-05-16T12:00:00.000Z"),
       expiresAt: new Date("2026-05-17T12:00:00.000Z"),
-      raw: { discover: [{ provider: "Apple TV+" }] },
+      raw: {
+        sourcingPolicy: "us-provider-network-v2",
+        discover: [{ provider: "Apple TV+" }],
+      },
       releases: [
         {
           eventId: "tmdb:tv:87917:350:2026-05-15:5:8",
@@ -110,6 +119,18 @@ describeIfDatabase("PrismaReleaseRepository integration", () => {
           popularity: 56.7,
           voteAverage: 8.1,
           voteCount: 1200,
+          originalLanguage: "en",
+          isInternational: false,
+          isDubbed: false,
+          sources: [
+            {
+              key: "provider:appletv",
+              name: "Apple TV+",
+              sourceId: 350,
+              sourceType: "sub" as const,
+              releaseSource: "tmdb" as const,
+            },
+          ],
         },
       ],
     };
@@ -137,6 +158,7 @@ describeIfDatabase("PrismaReleaseRepository integration", () => {
         seasonNumber: 5,
         episodeNumber: 8,
         voteAverage: 8.1,
+        sources: [expect.objectContaining({ name: "Apple TV+", sourceId: 350 })],
       }),
     ]);
   });

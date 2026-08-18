@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { FavoriteShowSummary } from "./release.models";
-import { favoriteSortLabel, filterFavoriteShows, sortFavoriteShows } from "./favorites.utils";
+import {
+  favoriteLifecycleLabel,
+  favoriteSeriesStageLabel,
+  favoriteSortLabel,
+  filterFavoriteShows,
+  sortFavoriteShows,
+} from "./favorites.utils";
 
 const show = (input: Partial<FavoriteShowSummary> & Pick<FavoriteShowSummary, "showKey" | "title">): FavoriteShowSummary => ({
   tmdbId: null,
@@ -13,6 +19,7 @@ const show = (input: Partial<FavoriteShowSummary> & Pick<FavoriteShowSummary, "s
   currentSeasonNumber: null,
   numberOfSeasons: null,
   numberOfEpisodes: null,
+  firstAirDate: null,
   lastAirDate: null,
   lastEpisode: null,
   nextEpisode: null,
@@ -58,5 +65,48 @@ describe("favorite show list utilities", () => {
     expect(favoriteSortLabel("lastEpisode")).toBe("Last episode");
     expect(favoriteSortLabel("nextEpisode")).toBe("Next episode");
     expect(favoriteSortLabel("name")).toBe("Name");
+  });
+
+  it("separates the upstream lifecycle from the series stage", () => {
+    const lanterns = show({
+      showKey: "tmdb:95350",
+      title: "Lanterns",
+      status: "Returning Series",
+      currentSeasonNumber: 1,
+      numberOfSeasons: 1,
+      firstAirDate: "2026-08-16",
+      lastEpisode: { name: "Pilot", seasonNumber: 1, episodeNumber: 1, airDate: "2026-08-16" },
+      nextEpisode: { name: "Episode 2", seasonNumber: 1, episodeNumber: 2, airDate: "2026-08-23" },
+    });
+
+    expect(favoriteLifecycleLabel(lanterns)).toBe("Active");
+    expect(favoriteSeriesStageLabel(lanterns, new Date("2026-08-17T12:00:00.000Z"))).toBe("New series");
+  });
+
+  it("distinguishes established first seasons, returning seasons, and planned premieres", () => {
+    expect(favoriteSeriesStageLabel(show({
+      showKey: "first-season",
+      title: "First Season",
+      currentSeasonNumber: 1,
+      firstAirDate: "2026-01-01",
+    }), new Date("2026-08-17T12:00:00.000Z"))).toBe("First season");
+    expect(favoriteSeriesStageLabel(show({
+      showKey: "returning",
+      title: "Returning",
+      currentSeasonNumber: 2,
+      numberOfSeasons: 2,
+    }), new Date("2026-08-17T12:00:00.000Z"))).toBe("Returning");
+    expect(favoriteSeriesStageLabel(show({
+      showKey: "planned",
+      title: "Planned",
+      status: "Planned",
+      currentSeasonNumber: 1,
+      firstAirDate: "2026-09-01",
+    }), new Date("2026-08-17T12:00:00.000Z"))).toBeNull();
+    expect(favoriteLifecycleLabel(show({
+      showKey: "ended",
+      title: "Ended",
+      status: "Ended",
+    }))).toBe("Ended");
   });
 });

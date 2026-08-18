@@ -1,6 +1,8 @@
 import { addDays, classifyWeek, parseDateOnly } from "./week.utils";
 import type { FetchCacheSnapshot } from "./release.types";
 
+const pastWeekCorrectionWindowDays = 3;
+
 export type CacheDecision = {
   shouldFetch: boolean;
   reason: "missing" | "refresh-requested" | "expired" | "fresh";
@@ -40,5 +42,6 @@ export function getNextExpiry(weekStart: string, fetchedAt: Date, now: Date = fe
 
 function wasFetchedAfterWeekCompleted(weekStart: string, fetchedAt: Date): boolean {
   const nextWeekStart = addDays(parseDateOnly(weekStart), 7);
-  return fetchedAt.getTime() >= nextWeekStart.getTime();
+  const correctionWindowEnd = addDays(nextWeekStart, pastWeekCorrectionWindowDays);
+  return fetchedAt.getTime() >= correctionWindowEnd.getTime();
 }

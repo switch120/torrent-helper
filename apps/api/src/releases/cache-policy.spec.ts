@@ -11,7 +11,7 @@ describe("release week cache policy", () => {
     });
   });
 
-  it("keeps finalized cached prior weeks permanently until manually refreshed", () => {
+  it("refreshes recently completed weeks during the correction window", () => {
     expect(
       getCacheDecision({
         weekStart: "2026-05-04",
@@ -21,17 +21,17 @@ describe("release week cache policy", () => {
           fetchedAt: new Date("2026-05-11T12:00:00.000Z"),
         },
       }),
-    ).toEqual({ shouldFetch: false, reason: "fresh" });
+    ).toEqual({ shouldFetch: true, reason: "expired" });
   });
 
-  it("keeps older finalized cached past weeks permanently until manually refreshed", () => {
+  it("keeps past weeks fetched after the correction window permanently", () => {
     expect(
       getCacheDecision({
         weekStart: "2026-04-06",
         now,
         cache: {
           status: "fresh",
-          fetchedAt: new Date("2026-04-13T12:00:00.000Z"),
+          fetchedAt: new Date("2026-04-16T12:00:00.000Z"),
         },
       }),
     ).toEqual({ shouldFetch: false, reason: "fresh" });
@@ -103,8 +103,14 @@ describe("release week cache policy", () => {
     ).toEqual({ shouldFetch: true, reason: "expired" });
   });
 
-  it("does not report expiry timestamps for finalized cached past weeks", () => {
-    expect(getNextExpiry("2026-05-04", new Date("2026-05-11T12:00:00.000Z"), now)).toBeNull();
+  it("reports expiry timestamps for recently completed weeks during the correction window", () => {
+    expect(
+      getNextExpiry("2026-05-04", new Date("2026-05-11T12:00:00.000Z"), now)?.toISOString(),
+    ).toBe("2026-05-12T12:00:00.000Z");
+  });
+
+  it("does not report expiry timestamps after the past-week correction window", () => {
+    expect(getNextExpiry("2026-05-04", new Date("2026-05-14T12:00:00.000Z"), now)).toBeNull();
   });
 
   it("reports expiry timestamps for past weeks cached before the week completed", () => {

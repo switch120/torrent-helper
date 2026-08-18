@@ -24,6 +24,7 @@ export type TmdbTvProviderGroup = {
   sourceId: number;
   sourceName: string;
   providerIds: number[];
+  networkIds?: number[];
 };
 
 type TmdbClientConfig = {
@@ -151,30 +152,34 @@ type TvEpisodeAiring = {
   detail: TmdbTvDetailResponse;
   season: TmdbSeasonDetailResponse;
   episode: NonNullable<TmdbSeasonDetailResponse["episodes"]>[number];
-  provider: TmdbTvProviderGroup;
+  providers: TmdbTvProviderGroup[];
 };
 
 type TvShowDiscovery = {
   show: TmdbTvSummary;
-  provider: TmdbTvProviderGroup;
+  providers: TmdbTvProviderGroup[];
 };
+
+type TvDiscoveryStrategy = "provider" | "network";
 
 const digitalReleaseType = 4;
 const tmdbDigitalDatePolicy = "original-us-digital-only-v3";
+const tmdbTvSourcingPolicy = "us-provider-network-v2";
 const featuredReleaseWindowDays = 548;
 const featuredVoteThreshold = 25;
 const featuredPopularityThreshold = 20;
 const defaultTvProviderGroups: TmdbTvProviderGroup[] = [
-  { sourceId: 350, sourceName: "Apple TV+", providerIds: [350] },
-  { sourceId: 8, sourceName: "Netflix", providerIds: [8] },
-  { sourceId: 15, sourceName: "Hulu", providerIds: [15] },
-  { sourceId: 1899, sourceName: "MAX", providerIds: [1899, 1825] },
-  { sourceId: 9, sourceName: "Prime Video", providerIds: [9] },
-  { sourceId: 337, sourceName: "Disney+", providerIds: [337] },
-  { sourceId: 2303, sourceName: "Paramount Plus", providerIds: [2303, 2616, 582, 633] },
-  { sourceId: 386, sourceName: "Peacock", providerIds: [386, 387] },
+  { sourceId: 350, sourceName: "Apple TV+", providerIds: [350, 2243], networkIds: [2552] },
+  { sourceId: 8, sourceName: "Netflix", providerIds: [8, 175, 1796], networkIds: [213] },
+  { sourceId: 15, sourceName: "Hulu", providerIds: [15], networkIds: [453] },
+  { sourceId: 1899, sourceName: "MAX", providerIds: [1899, 1825], networkIds: [49, 3186, 6783, 8304] },
+  { sourceId: 9, sourceName: "Prime Video", providerIds: [9, 613, 2100], networkIds: [1024] },
+  { sourceId: 337, sourceName: "Disney+", providerIds: [337], networkIds: [2739] },
+  { sourceId: 2303, sourceName: "Paramount Plus", providerIds: [2303, 2616, 582, 633, 1853], networkIds: [4330, 5506] },
+  { sourceId: 386, sourceName: "Peacock", providerIds: [386, 387, 2553], networkIds: [3353] },
+  { sourceId: 43, sourceName: "STARZ", providerIds: [43, 634, 1794, 1855], networkIds: [318] },
   { sourceId: 207, sourceName: "The Roku Channel", providerIds: [207] },
-  { sourceId: 123, sourceName: "FX", providerIds: [123] },
+  { sourceId: 123, sourceName: "FX", providerIds: [123], networkIds: [88] },
 ];
 
 export class TmdbClient {
@@ -196,8 +201,8 @@ export class TmdbClient {
     this.baseUrl = config.baseUrl || "https://api.themoviedb.org";
     this.imageBaseUrl = config.imageBaseUrl || "https://image.tmdb.org/t/p/w342";
     this.fetchImpl = config.fetchImpl || fetch;
-    this.maxPages = config.maxPages || 5;
-    this.maxTvPages = config.maxTvPages || 3;
+    this.maxPages = config.maxPages || 10;
+    this.maxTvPages = config.maxTvPages || 10;
     this.maxConcurrentRequests = config.maxConcurrentRequests || 6;
     this.retryDelayMs = config.retryDelayMs ?? 1_000;
     this.maxRetries = config.maxRetries ?? 2;
@@ -219,27 +224,29 @@ export class TmdbClient {
     const digitalDiscoverPages = await this.fetchDiscoverPages(input, digitalReleaseType);
     const digitalMovieCandidates = digitalDiscoverPages.flatMap((page) => page.results || []);
     const movies = uniqueMovies(digitalMovieCandidates);
-    const digitalMovies: DigitalMovie[] = [];
+    const digitalMovies = (await mapWithConcurrency(
+      movies,
+      this.maxConcurrentRequests,
+      async (movie): Promise<DigitalMovie | null> => {
+        const rawReleaseDates = await this.fetchReleaseDates(movie.id);
+        const releaseDateMatch = findDigitalReleaseDate(
+          rawReleaseDates,
+          input.weekStart,
+          input.weekEnd,
+        );
+        if (!releaseDateMatch) return null;
 
-    for (const movie of movies) {
-      const rawReleaseDates = await this.fetchReleaseDates(movie.id);
-      const releaseDateMatch = findDigitalReleaseDate(
-        rawReleaseDates,
-        input.weekStart,
-        input.weekEnd,
-      );
-      if (!releaseDateMatch) continue;
+        const providerAvailability = await this.fetchMovieProviderAvailability(movie.id);
 
-      const providerAvailability = await this.fetchMovieProviderAvailability(movie.id);
-
-      digitalMovies.push({
-        movie,
-        releaseDate: releaseDateMatch.date,
-        releaseDateSource: releaseDateMatch.source,
-        streamingProviders: providerAvailability.streamingProviders,
-        rawReleaseDates,
-      });
-    }
+        return {
+          movie,
+          releaseDate: releaseDateMatch.date,
+          releaseDateSource: releaseDateMatch.source,
+          streamingProviders: providerAvailability.streamingProviders,
+          rawReleaseDates,
+        };
+      },
+    )).filter((movie): movie is DigitalMovie => Boolean(movie));
 
     return {
       releases: digitalMovies.map((item) => this.normalizeDigitalMovie(item)),
@@ -249,6 +256,11 @@ export class TmdbClient {
           digital: digitalDiscoverPages,
         },
         releaseDates: digitalMovies.map((item) => item.rawReleaseDates),
+        metrics: {
+          candidateCount: movies.length,
+          releaseCount: digitalMovies.length,
+          pageCount: digitalDiscoverPages.length,
+        },
       },
     };
   }
@@ -261,22 +273,39 @@ export class TmdbClient {
       return { releases: [], raw: { disabled: true } };
     }
 
-    const rawDiscover: Array<{ provider: TmdbTvProviderGroup; pages: TmdbTvDiscoverResponse[] }> = [];
+    const rawDiscover: Array<{
+      provider: TmdbTvProviderGroup;
+      strategy: TvDiscoveryStrategy;
+      pages: TmdbTvDiscoverResponse[];
+    }> = [];
     const airings: TvEpisodeAiring[] = [];
 
     const discoverResults = await mapWithConcurrency(
       this.tvProviderGroups,
       this.maxConcurrentRequests,
       async (provider) => {
-        const pages = await this.fetchTvDiscoverPages(input, provider);
-        return { provider, pages };
+        const [providerPages, networkPages] = await Promise.all([
+          this.fetchTvDiscoverPages(input, provider, "provider"),
+          provider.networkIds?.length
+            ? this.fetchTvDiscoverPages(input, provider, "network")
+            : Promise.resolve([]),
+        ]);
+        return [
+          { provider, strategy: "provider" as const, pages: providerPages },
+          ...(networkPages.length
+            ? [{ provider, strategy: "network" as const, pages: networkPages }]
+            : []),
+        ];
       },
     );
-    rawDiscover.push(...discoverResults);
+    rawDiscover.push(...discoverResults.flat());
 
     const discoveredShows = uniqueTvShowDiscoveries(
-      discoverResults.flatMap(({ provider, pages }) =>
-        uniqueTvShows(pages.flatMap((page) => page.results || [])).map((show) => ({ show, provider })),
+      rawDiscover.flatMap(({ provider, pages }) =>
+        uniqueTvShows(pages.flatMap((page) => page.results || [])).map((show) => ({
+          show,
+          providers: [provider],
+        })),
       ),
     );
     const airingGroups = await mapWithConcurrency(
@@ -294,9 +323,16 @@ export class TmdbClient {
         discover: rawDiscover,
         airings: airings.map((item) => ({
           show: item.show,
-          provider: item.provider,
+          providers: item.providers,
           episode: item.episode,
         })),
+        sourcingPolicy: tmdbTvSourcingPolicy,
+        metrics: {
+          discoveryBatchCount: rawDiscover.length,
+          discoveryPageCount: rawDiscover.reduce((total, batch) => total + batch.pages.length, 0),
+          candidateCount: discoveredShows.length,
+          releaseCount: releases.length,
+        },
       },
     };
   }
@@ -312,9 +348,12 @@ export class TmdbClient {
     const pages = [firstPage];
     const totalPages = Math.min(firstPage.total_pages || 1, this.maxPages);
 
-    for (let page = 2; page <= totalPages; page += 1) {
-      pages.push(await this.fetchDiscoverPage(input, releaseType, page));
-    }
+    const remainingPages = Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => index + 2);
+    pages.push(...await mapWithConcurrency(
+      remainingPages,
+      this.maxConcurrentRequests,
+      (page) => this.fetchDiscoverPage(input, releaseType, page),
+    ));
 
     return pages;
   }
@@ -322,14 +361,18 @@ export class TmdbClient {
   private async fetchTvDiscoverPages(
     input: { weekStart: string; weekEnd: string },
     provider: TmdbTvProviderGroup,
+    strategy: TvDiscoveryStrategy,
   ): Promise<TmdbTvDiscoverResponse[]> {
-    const firstPage = await this.fetchTvDiscoverPage(input, provider, 1);
+    const firstPage = await this.fetchTvDiscoverPage(input, provider, strategy, 1);
     const pages = [firstPage];
     const totalPages = Math.min(firstPage.total_pages || 1, this.maxTvPages);
 
-    for (let page = 2; page <= totalPages; page += 1) {
-      pages.push(await this.fetchTvDiscoverPage(input, provider, page));
-    }
+    const remainingPages = Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => index + 2);
+    pages.push(...await mapWithConcurrency(
+      remainingPages,
+      this.maxConcurrentRequests,
+      (page) => this.fetchTvDiscoverPage(input, provider, strategy, page),
+    ));
 
     return pages;
   }
@@ -337,6 +380,7 @@ export class TmdbClient {
   private fetchTvDiscoverPage(
     input: { weekStart: string; weekEnd: string },
     provider: TmdbTvProviderGroup,
+    strategy: TvDiscoveryStrategy,
     page: number,
   ): Promise<TmdbTvDiscoverResponse> {
     const url = this.url("/3/discover/tv");
@@ -348,8 +392,12 @@ export class TmdbClient {
     url.searchParams.set("sort_by", "popularity.desc");
     url.searchParams.set("timezone", "America/New_York");
     url.searchParams.set("watch_region", "US");
-    url.searchParams.set("with_watch_monetization_types", "flatrate|free|ads");
-    url.searchParams.set("with_watch_providers", provider.providerIds.join("|"));
+    if (strategy === "network") {
+      url.searchParams.set("with_networks", (provider.networkIds || []).join("|"));
+    } else {
+      url.searchParams.set("with_watch_monetization_types", "flatrate|free|ads");
+      url.searchParams.set("with_watch_providers", provider.providerIds.join("|"));
+    }
 
     return this.fetchJson<TmdbTvDiscoverResponse>(url);
   }
@@ -385,7 +433,7 @@ export class TmdbClient {
             detail,
             season,
             episode,
-            provider: discovery.provider,
+            providers: discovery.providers,
           })),
       );
   }
@@ -604,6 +652,7 @@ export class TmdbClient {
         item.detail.overview,
         item.episode.name,
       ),
+      sources: item.providers.map(providerSourceFromTvProviderGroup),
     };
   }
 }
@@ -627,7 +676,16 @@ function uniqueTvShows(shows: TmdbTvSummary[]): TmdbTvSummary[] {
 function uniqueTvShowDiscoveries(discoveries: TvShowDiscovery[]): TvShowDiscovery[] {
   const byId = new Map<number, TvShowDiscovery>();
   for (const discovery of discoveries) {
-    if (!byId.has(discovery.show.id)) byId.set(discovery.show.id, discovery);
+    const existing = byId.get(discovery.show.id);
+    if (!existing) {
+      byId.set(discovery.show.id, discovery);
+      continue;
+    }
+
+    existing.providers = uniqueTvProviderGroups([
+      ...existing.providers,
+      ...discovery.providers,
+    ]);
   }
   return [...byId.values()];
 }
@@ -680,6 +738,26 @@ function providerSourceFromTmdbProvider(
   };
 }
 
+function providerSourceFromTvProviderGroup(
+  provider: TmdbTvProviderGroup,
+): ReleaseProviderSource {
+  return {
+    key: providerKeyFromName(provider.sourceName),
+    name: provider.sourceName,
+    sourceId: provider.sourceId,
+    sourceType: "sub",
+    releaseSource: "tmdb",
+  };
+}
+
+function uniqueTvProviderGroups(
+  providers: TmdbTvProviderGroup[],
+): TmdbTvProviderGroup[] {
+  const byId = new Map<number, TmdbTvProviderGroup>();
+  for (const provider of providers) byId.set(provider.sourceId, provider);
+  return [...byId.values()].sort((a, b) => a.sourceName.localeCompare(b.sourceName));
+}
+
 function uniqueProviderSources(sources: ReleaseProviderSource[]): ReleaseProviderSource[] {
   const byKey = new Map<string, ReleaseProviderSource>();
   for (const source of sources) {
@@ -714,17 +792,31 @@ function selectPotentialAiringSeasons(
   weekStart: string,
   weekEnd: string,
 ): TmdbSeasonSummary[] {
-  const selected = seasons.filter((season) => {
+  const eligible = seasons.filter((season) => {
     if (!season.season_number || season.season_number <= 0) return false;
     if (!season.air_date) return true;
     return season.air_date <= weekEnd;
   });
 
-  if (selected.length <= 3) return selected;
+  const dated = eligible
+    .filter((season) => Boolean(season.air_date))
+    .sort((a, b) =>
+      (b.air_date || "").localeCompare(a.air_date || "") ||
+      (b.season_number ?? 0) - (a.season_number ?? 0),
+    );
+  const undated = eligible
+    .filter((season) => !season.air_date)
+    .sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0));
+  const activeSeasons = dated
+    .filter((season) => (season.air_date || "") <= weekEnd)
+    .slice(0, 2);
+  const fallbackSeason = undated[0];
 
-  return selected
-    .sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0))
-    .slice(0, 3)
+  return [...activeSeasons, fallbackSeason]
+    .filter((season): season is TmdbSeasonSummary => Boolean(season))
+    .filter((season, index, selected) =>
+      selected.findIndex((candidate) => candidate.season_number === season.season_number) === index,
+    )
     .sort((a, b) => (a.season_number ?? 0) - (b.season_number ?? 0));
 }
 

@@ -93,11 +93,13 @@ export function buildReleaseSections(
   const tvRows = filterLanguageVisibility(groupTvReleases(response?.tv ?? []), favoriteOptions);
   const tvWithProviders = filterSelectedProviders(tvRows, selectedProviderKeys);
   const tvWithoutHiddenShows = filterHiddenShows(tvWithProviders, hiddenShowKeys);
-  const tv = filterFavoriteShows(
+  const favoriteShowKeys = favoriteOptions.favoriteShowKeys ?? new Set<string>();
+  const visibleTv = filterFavoriteShows(
     tvWithoutHiddenShows,
     favoriteOptions.showOnlyFavorites === true,
-    favoriteOptions.favoriteShowKeys ?? new Set(),
+    favoriteShowKeys,
   );
+  const tv = prioritizeFavoriteShows(visibleTv, favoriteShowKeys);
 
   return [
     {
@@ -278,6 +280,21 @@ function filterFavoriteShows(
 ): DigitalRelease[] {
   if (!showOnlyFavorites) return releases;
   return releases.filter((release) => favoriteShowKeys.has(showKey(release)));
+}
+
+function prioritizeFavoriteShows(
+  releases: DigitalRelease[],
+  favoriteShowKeys: Set<string>,
+): DigitalRelease[] {
+  const favorites: DigitalRelease[] = [];
+  const otherShows: DigitalRelease[] = [];
+
+  for (const release of releases) {
+    (favoriteShowKeys.has(showKey(release)) ? favorites : otherShows).push(release);
+  }
+
+  favorites.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+  return [...favorites, ...otherShows];
 }
 
 function filterLanguageVisibility(

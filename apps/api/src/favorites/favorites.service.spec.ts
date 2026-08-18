@@ -40,6 +40,7 @@ describe("FavoritesService", () => {
         number_of_seasons: 3,
         number_of_episodes: 20,
         last_air_date: "2026-07-20",
+        first_air_date: "2024-01-01",
         last_episode_to_air: {
           name: "Season Three",
           season_number: 3,
@@ -62,6 +63,7 @@ describe("FavoritesService", () => {
         currentSeasonNumber: 3,
         numberOfSeasons: 3,
         numberOfEpisodes: 20,
+        firstAirDate: "2024-01-01",
       }),
     ]);
     expect(tmdb.getTvDetail).toHaveBeenCalledWith(100);
@@ -98,6 +100,7 @@ describe("FavoritesService", () => {
           nextEpisode: { name: "Next", seasonNumber: 2, episodeNumber: 2, airDate: "2026-05-08" },
           releaseContext: { sourceName: "Hulu", seasonNumber: 2 },
           preferredDownloadDir: "/data/TV/Example Show",
+          raw: { first_air_date: "2025-01-01" },
           fetchedAt: new Date("2026-05-16T12:00:00.000Z"),
         }),
       },
@@ -152,6 +155,7 @@ describe("FavoritesService", () => {
       showKey: "tmdb:100",
       title: "Example Show",
       status: "Returning Series",
+      firstAirDate: "2025-01-01",
       currentSeasonNumber: 2,
       lastEpisode: { name: "Last", seasonNumber: 2, episodeNumber: 1, airDate: "2026-05-01" },
       nextEpisode: { name: "Next", seasonNumber: 2, episodeNumber: 2, airDate: "2026-05-08" },

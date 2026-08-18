@@ -10,10 +10,11 @@ import type { TmdbClient, TmdbMovieLookup } from "./tmdb.client";
 import { buildWeekWindow } from "./week.utils";
 
 type Clock = () => Date;
+type RefreshChannel = "movies" | "tv";
 
 @Injectable()
 export class ReleasesService {
-  private refreshChain: Promise<void> = Promise.resolve();
+  private readonly refreshChains = new Map<RefreshChannel, Promise<void>>();
 
   constructor(
     @Inject(RELEASE_REPOSITORY) private readonly repository: ReleaseRepository,
@@ -50,12 +51,15 @@ export class ReleasesService {
       );
     }
 
-    const tmdbWarning = await this.ensureTmdbDigitalMovies(window, now, forceRefresh);
-    const tmdbTvWarning = await this.ensureTmdbTvAirings(window, now, forceRefresh);
-    const releases = [
-      ...(await this.repository.getTmdbDigitalMovies(window.weekStart, window.weekEnd)),
-      ...(await this.repository.getTmdbTvAirings(window.weekStart, window.weekEnd)),
-    ];
+    const [tmdbWarning, tmdbTvWarning] = await Promise.all([
+      this.ensureTmdbDigitalMovies(window, now, forceRefresh),
+      this.ensureTmdbTvAirings(window, now, forceRefresh),
+    ]);
+    const [movies, tv] = await Promise.all([
+      this.repository.getTmdbDigitalMovies(window.weekStart, window.weekEnd),
+      this.repository.getTmdbTvAirings(window.weekStart, window.weekEnd),
+    ]);
+    const releases = [...movies, ...tv];
     const cache = await this.getTmdbCacheSnapshot(window.weekStart, window.weekEnd);
 
     return this.toResponse(
@@ -94,7 +98,7 @@ export class ReleasesService {
 
     if (!decision.shouldFetch) return null;
 
-    return this.queueRefresh(async () => {
+    return this.queueRefresh("movies", async () => {
       const latestCache = await this.repository.getTmdbDigitalWeekCache(window.weekStart);
       const latestDecision = getRefreshDecision({
         weekStart: window.weekStart,
@@ -145,7 +149,7 @@ export class ReleasesService {
 
     if (!decision.shouldFetch) return null;
 
-    return this.queueRefresh(async () => {
+    return this.queueRefresh("tv", async () => {
       const latestCache = await this.repository.getTmdbTvWeekCache(window.weekStart);
       const latestDecision = getRefreshDecision({
         weekStart: window.weekStart,
@@ -181,10 +185,10 @@ export class ReleasesService {
     weekStart: string,
     weekEnd: string,
   ): Promise<FetchCacheSnapshot | null> {
-    const caches = [
-      await this.repository.getTmdbDigitalWeekCache(weekStart),
-      await this.repository.getTmdbTvWeekCache(weekStart),
-    ].filter((cache): cache is NonNullable<typeof cache> => Boolean(cache));
+    const caches = (await Promise.all([
+      this.repository.getTmdbDigitalWeekCache(weekStart),
+      this.repository.getTmdbTvWeekCache(weekStart),
+    ])).filter((cache): cache is NonNullable<typeof cache> => Boolean(cache));
 
     if (caches.length === 0) return null;
 
@@ -203,9 +207,10 @@ export class ReleasesService {
     };
   }
 
-  private queueRefresh<T>(refresh: () => Promise<T>): Promise<T> {
-    const run = this.refreshChain.catch(() => undefined).then(refresh);
-    this.refreshChain = run.then(() => undefined, () => undefined);
+  private queueRefresh<T>(channel: RefreshChannel, refresh: () => Promise<T>): Promise<T> {
+    const previous = this.refreshChains.get(channel) || Promise.resolve();
+    const run = previous.catch(() => undefined).then(refresh);
+    this.refreshChains.set(channel, run.then(() => undefined, () => undefined));
     return run;
   }
 
@@ -245,16 +250,18 @@ export class ReleasesService {
         .filter((release) => release.tmdbId)
         .map((release) => `${release.tmdbId}:${release.releaseDate}`),
     );
-    const normalized: NormalizedRelease[] = [];
+    const normalized = await mapWithConcurrency(
+      releases,
+      6,
+      async (release): Promise<NormalizedRelease | null> => {
+        if (!release.imdbId) return null;
+        const tmdbMovie = await this.tmdb.findMovieByImdbId(release.imdbId);
+        if (!tmdbMovie || existingKeys.has(`${tmdbMovie.id}:${release.releaseDate}`)) return null;
+        return normalizeDvdDigitalMovie(release, tmdbMovie);
+      },
+    );
 
-    for (const release of releases) {
-      if (!release.imdbId) continue;
-      const tmdbMovie = await this.tmdb.findMovieByImdbId(release.imdbId);
-      if (!tmdbMovie || existingKeys.has(`${tmdbMovie.id}:${release.releaseDate}`)) continue;
-      normalized.push(normalizeDvdDigitalMovie(release, tmdbMovie));
-    }
-
-    return normalized;
+    return normalized.filter((release): release is NormalizedRelease => Boolean(release));
   }
 
   private toResponse(
@@ -338,6 +345,27 @@ function withSupplementalRaw(raw: unknown, supplementalRaw: unknown): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function mapWithConcurrency<Input, Output>(
+  items: Input[],
+  limit: number,
+  mapper: (item: Input, index: number) => Promise<Output>,
+): Promise<Output[]> {
+  if (items.length === 0) return [];
+
+  const results = new Array<Output>(items.length);
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(items.length, Math.max(1, limit)) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    }),
+  );
+  return results;
 }
 
 function compareRelease(a: NormalizedRelease, b: NormalizedRelease): number {

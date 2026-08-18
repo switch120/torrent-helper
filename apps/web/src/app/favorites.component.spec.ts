@@ -77,6 +77,41 @@ describe("FavoritesComponent episode browser", () => {
     });
   });
 
+  it("renders active and new-series labels without calling a first-season show returning", async () => {
+    api.getFavorites.mockResolvedValue([{
+      ...favorite,
+      showKey: "tmdb:95350",
+      tmdbId: 95350,
+      title: "Lanterns",
+      status: "Returning Series",
+      currentSeasonNumber: 1,
+      numberOfSeasons: 1,
+      numberOfEpisodes: 8,
+      firstAirDate: new Date().toISOString().slice(0, 10),
+      lastEpisode: {
+        name: "Pilot",
+        seasonNumber: 1,
+        episodeNumber: 1,
+        airDate: "2026-08-16",
+      },
+      nextEpisode: {
+        name: "Episode 2",
+        seasonNumber: 1,
+        episodeNumber: 2,
+        airDate: "2026-08-23",
+      },
+    }]);
+    const fixture = TestBed.createComponent(FavoritesComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const labels = fixture.nativeElement.querySelector(".source-line")?.textContent || "";
+    expect(labels).toContain("Active");
+    expect(labels).toContain("New series");
+    expect(labels).not.toContain("Returning Series");
+  });
+
   it("selects the current season, defaults to 2160p, and searches the expanded episode", async () => {
     const fixture = TestBed.createComponent(FavoritesComponent);
     fixture.detectChanges();
@@ -423,6 +458,7 @@ function show(): FavoriteShowSummary {
     currentSeasonNumber: 3,
     numberOfSeasons: 3,
     numberOfEpisodes: 21,
+    firstAirDate: "2024-01-01",
     lastAirDate: "2026-07-01",
     lastEpisode: {
       name: "Premiere",

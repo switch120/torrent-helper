@@ -2,7 +2,14 @@ import { CommonModule } from "@angular/common";
 import { Component, OnInit, computed, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { RouterLink } from "@angular/router";
-import { favoriteSortLabel, filterFavoriteShows, sortFavoriteShows, type FavoriteSortKey } from "./favorites.utils";
+import {
+  favoriteLifecycleLabel,
+  favoriteSeriesStageLabel,
+  favoriteSortLabel,
+  filterFavoriteShows,
+  sortFavoriteShows,
+  type FavoriteSortKey,
+} from "./favorites.utils";
 import { ReleaseApiClient } from "./release-api.client";
 import type {
   DownloadHistoryStatus,
@@ -76,6 +83,8 @@ export class FavoritesComponent implements OnInit {
   readonly episodeAddStatus = signal<"idle" | "adding" | "error">("idle");
   readonly episodeAddError = signal<string | null>(null);
   readonly sortOptions: FavoriteSortKey[] = ["lastEpisode", "nextEpisode", "name"];
+  readonly favoriteLifecycleLabel = favoriteLifecycleLabel;
+  readonly favoriteSeriesStageLabel = favoriteSeriesStageLabel;
   readonly favoriteSortLabel = favoriteSortLabel;
   readonly visibleFavorites = computed(() =>
     sortFavoriteShows(filterFavoriteShows(this.favorites(), this.showNoNextDate()), this.sortKey()),
